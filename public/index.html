@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registrar's Desk — Bonafide Certificate System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#1C2333; --ink-soft:#3B4256; --parchment:#F7F4EC; --parchment-raised:#FFFEFA;
+    --line:#D9D2BE; --maroon:#7A2E2E; --maroon-deep:#5C2222; --gold:#A9823F; --gold-soft:#E4D5AE;
+    --sage:#4C6B4F; --sage-bg:#E7EEE3; --brick:#9C4530; --brick-bg:#F3E2D9; --slate:#6B7280; --slate-bg:#ECEAE2;
+    --focus:#2F5DA8; --font-display:'Fraunces',Georgia,serif; --font-body:'Inter',-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+  body{background:var(--parchment);color:var(--ink);font-family:var(--font-body);line-height:1.5;-webkit-font-smoothing:antialiased;}
+  button{font-family:inherit;} :focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+  #app-shell{display:none;}
+  #login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px 20px;background:var(--ink);}
+  .login-card{width:100%;max-width:400px;background:var(--parchment-raised);border:1px solid var(--line);border-radius:6px;padding:28px 26px;}
+  .login-brand{display:flex;align-items:center;gap:12px;margin-bottom:20px;}
+  .login-brand h1{font-family:var(--font-display);font-weight:500;font-size:19px;margin:0;}
+  .login-brand p{margin:2px 0 0;font-size:12px;color:var(--slate);}
+  .seal{width:38px;height:38px;flex:none;border-radius:50%;border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:15px;color:var(--gold);}
+  .login-tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line);}
+  .login-tab{background:none;border:none;padding:8px 4px;margin-right:18px;font-size:13px;font-weight:500;color:var(--slate);cursor:pointer;border-bottom:2px solid transparent;}
+  .login-tab.active{color:var(--ink);border-bottom-color:var(--maroon);}
+  .login-pane{display:none;} .login-pane.active{display:block;}
+  .login-error{margin-top:10px;padding:9px 11px;border-radius:4px;background:var(--brick-bg);color:var(--brick);font-size:12.5px;font-weight:500;}
+  .demo-accounts{margin-top:6px;}
+  .demo-account-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:12.5px;}
+  .demo-account-row:last-child{border-bottom:none;}
+  .demo-account-row .who strong{color:var(--ink);display:block;font-size:13px;}
+  header.shell{background:var(--ink);color:var(--parchment);padding:22px 24px 0;}
+  .header-row{max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:18px;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-text h1{font-family:var(--font-display);font-weight:500;font-size:19px;margin:0;}
+  .brand-text p{margin:2px 0 0;font-size:12.5px;color:#B9B4A6;}
+  nav.roles{display:flex;gap:4px;background:rgba(255,255,255,0.06);padding:4px;border-radius:9px;flex-wrap:wrap;}
+  nav.roles button{border:none;background:transparent;color:#C9C4B6;padding:8px 14px;border-radius:6px;font-size:13.5px;font-weight:500;cursor:pointer;}
+  nav.roles button.active{background:var(--parchment);color:var(--ink);}
+  .user-badge{display:flex;align-items:center;gap:10px;}
+  .user-badge-text{text-align:right;font-size:12px;line-height:1.35;}
+  .user-badge-text strong{display:block;font-size:13px;color:var(--parchment);}
+  .user-badge-text span{color:#B9B4A6;}
+  main{max-width:1080px;margin:0 auto;padding:32px 24px 80px;}
+  .screen{display:none;} .screen.active{display:block;}
+  h2.section-title{font-family:var(--font-display);font-weight:500;font-size:26px;margin:0 0 4px;}
+  p.section-sub{color:var(--ink-soft);margin:0 0 24px;font-size:14.5px;max-width:65ch;}
+  .panel{background:var(--parchment-raised);border:1px solid var(--line);border-radius:4px;padding:20px;}
+  .panel + .panel{margin-top:16px;}
+  .grid-2{display:grid;grid-template-columns:1.1fr 1.4fr;gap:20px;align-items:start;}
+  @media (max-width:800px){.grid-2{grid-template-columns:1fr;}}
+  .label{font-size:11.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--slate);margin:0 0 3px;}
+  .field-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:14px;}
+  .field-row:last-child{border-bottom:none;} .field-row span:last-child{font-weight:500;text-align:right;}
+  button.btn{border:1px solid var(--ink);background:var(--ink);color:var(--parchment);padding:9px 16px;border-radius:4px;font-size:13.5px;font-weight:600;cursor:pointer;}
+  button.btn:disabled{opacity:.4;cursor:not-allowed;}
+  button.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+  button.btn.maroon{background:var(--maroon-deep);border-color:var(--maroon-deep);color:#fff;}
+  button.btn.small{padding:6px 11px;font-size:12.5px;}
+  .banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:4px;font-size:13.5px;font-weight:500;margin-bottom:16px;}
+  .banner.clear{background:var(--sage-bg);color:var(--sage);} .banner.pending{background:var(--brick-bg);color:var(--brick);}
+  .banner .dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none;}
+  .cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:12px 0 16px;}
+  .cat-card{border:1px solid var(--line);border-radius:4px;padding:12px;background:var(--parchment);cursor:pointer;font-size:13px;font-weight:500;text-align:left;}
+  .cat-card.selected{border-color:var(--maroon);background:var(--brick-bg);color:var(--maroon-deep);}
+  .cat-card small{display:block;font-weight:400;color:var(--slate);margin-top:3px;font-size:11px;}
+  select,textarea,input[type=text]{width:100%;border:1px solid var(--line);background:var(--parchment-raised);color:var(--ink);padding:9px 10px;border-radius:4px;font-family:inherit;font-size:13.5px;margin-top:4px;}
+  textarea{resize:vertical;min-height:64px;}
+  .upload-zone{border:1.5px dashed var(--line);border-radius:4px;padding:16px;text-align:center;font-size:13px;color:var(--ink-soft);margin-top:6px;cursor:pointer;}
+  .upload-zone.has-file{border-style:solid;border-color:var(--sage);color:var(--sage);background:var(--sage-bg);}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap;}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+  .pill.active{background:var(--gold-soft);color:var(--gold);} .pill.issued{background:var(--sage-bg);color:var(--sage);}
+  .pill.rejected{background:var(--brick-bg);color:var(--brick);} .pill.docs{background:var(--brick-bg);color:var(--brick);}
+  .track-tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--line);}
+  .track-tabs button{background:none;border:none;padding:9px 4px;margin-right:16px;font-size:13.5px;font-weight:500;color:var(--slate);cursor:pointer;border-bottom:2px solid transparent;}
+  .track-tabs button.active{color:var(--ink);border-bottom-color:var(--maroon);}
+  .ledger{border-top:1px solid var(--line);}
+  .ledger-row{display:flex;align-items:center;gap:14px;padding:13px 4px;border-bottom:1px solid var(--line);font-size:13.5px;}
+  .ledger-row .accent{width:3px;align-self:stretch;border-radius:2px;flex:none;}
+  .ledger-row .main{flex:1;min-width:0;} .ledger-row .code{font-weight:600;font-size:13px;}
+  .ledger-row .meta{color:var(--slate);font-size:12.5px;margin-top:2px;}
+  .ledger-row .actions{display:flex;gap:6px;flex:none;flex-wrap:wrap;}
+  .ledger-empty{padding:28px 4px;color:var(--slate);font-size:13.5px;text-align:center;}
+  details.timeline{margin-top:4px;} details.timeline summary{cursor:pointer;font-size:12.5px;color:var(--focus);}
+  ul.hist{list-style:none;margin:8px 0 0;padding:0;font-size:12.5px;color:var(--ink-soft);}
+  ul.hist li{padding:4px 0 4px 14px;border-left:2px solid var(--line);margin-left:2px;}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}
+  .metric{background:var(--parchment-raised);border:1px solid var(--line);border-radius:4px;padding:16px;}
+  .metric .num{font-family:var(--font-display);font-size:30px;font-weight:500;} .metric .cap{font-size:12px;color:var(--slate);margin-top:2px;}
+  .overlay{position:fixed;inset:0;background:rgba(20,18,12,0.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
+  .overlay.open{display:flex;}
+  .modal{background:var(--parchment-raised);border:1px solid var(--line);border-radius:6px;padding:22px;max-width:420px;width:100%;}
+  .modal h3{font-family:var(--font-display);font-weight:500;font-size:19px;margin:0 0 10px;}
+  .modal .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+  .cert-wrap{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0;margin-top:16px;overflow:hidden;}
+  .cert-wrap img.letterhead-band{display:block;width:100%;height:auto;}
+  .cert-body{padding:10px 34px 26px;color:#111;font-size:14px;line-height:1.7;}
+  .cert-body h2.cert-heading{font-family:var(--font-display);text-align:center;font-size:20px;text-decoration:underline;margin:10px 0 18px;}
+  .cert-body mark{background:#FFF176;padding:0 2px;font-weight:600;}
+  .cert-body .sig-marks{margin-top:36px;} .cert-body .sig-name{font-weight:700;margin:14px 0 0;}
+  .cert-body .sig-title{font-weight:700;margin:0;}
+  .cert-body .cert-type-footer{color:var(--slate);font-style:italic;font-size:12px;margin-top:22px;}
+  #qr-canvas{margin-top:10px;}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--slate);}
+  footer.note{max-width:1080px;margin:0 auto;padding:0 24px 40px;font-size:12px;color:var(--slate);}
+  select.dept-picker{width:auto;display:inline-block;margin:0 0 14px;}
+  @media print{header.shell,nav.roles,.no-print,footer.note{display:none !important;} body{background:#fff;} main{padding:0;max-width:none;} .panel{border:none;padding:0;}}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="seal">R</div>
+      <div><h1>Registrar's Desk</h1><p>Bonafide Certificate System — Anant National University</p></div>
+    </div>
+    <div class="login-tabs">
+      <button type="button" class="login-tab active" data-tab="signin">Sign in</button>
+      <button type="button" class="login-tab" data-tab="verify">Verify a certificate</button>
+    </div>
+    <div id="login-pane-signin" class="login-pane active">
+      <p class="label">Username</p>
+      <input type="text" id="login-username" autocomplete="username">
+      <p class="label" style="margin-top:10px;">Password</p>
+      <input type="text" id="login-password" autocomplete="current-password">
+      <div id="login-error" class="login-error" style="display:none;"></div>
+      <button class="btn maroon" id="login-submit" style="margin-top:14px;width:100%;">Sign in</button>
+      <div class="demo-accounts">
+        <p class="label" style="margin-top:18px;">Demo accounts — click one to fill it in</p>
+        <div id="demo-account-list"></div>
+      </div>
+    </div>
+    <div id="login-pane-verify" class="login-pane">
+      <p class="label">Certificate number or verification token</p>
+      <input type="text" id="verify-input-pub" placeholder="e.g. UNIV/BC/2026/000123">
+      <button class="btn" id="verify-btn-pub" style="margin-top:10px;width:100%;">Verify</button>
+      <div id="verify-result-pub" style="margin-top:14px;"></div>
+    </div>
+  </div>
+</div>
+
+<div id="app-shell">
+<header class="shell">
+  <div class="header-row">
+    <div class="brand">
+      <div class="seal">R</div>
+      <div class="brand-text"><h1>Registrar's Desk</h1><p>Bonafide Certificate System — Anant National University</p></div>
+    </div>
+    <nav class="roles" id="role-nav"></nav>
+    <div class="user-badge">
+      <div class="user-badge-text"><strong id="user-badge-name"></strong><span id="user-badge-role"></span></div>
+      <button class="btn ghost small" id="logout-btn">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="screen" id="screen-student">
+    <h2 class="section-title">Your applications</h2>
+    <p class="section-sub" id="student-sub">Profile pulled from SDMIS each time you open a new application.</p>
+    <div class="grid-2">
+      <div>
+        <div class="panel">
+          <p class="label">Student profile</p>
+          <div id="student-profile"></div>
+        </div>
+        <div class="panel">
+          <p class="label">New application</p>
+          <p class="label" style="margin-top:2px;">Certificate category</p>
+          <div class="cat-grid" id="cat-grid"></div>
+          <div id="doc-field" style="display:none;"><p class="label">Supporting document</p><div class="upload-zone" id="upload-zone">Click to attach a file</div></div>
+          <div id="undertaking-field" style="display:none;">
+            <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:10px;">
+              <input type="checkbox" id="undertaking-check" style="margin-top:3px;">
+              <span>The student has signed and attached the MYSY undertaking (see template pack)</span>
+            </label>
+          </div>
+          <p class="label" style="margin-top:14px;">Purpose note (optional)</p>
+          <textarea id="purpose-note"></textarea>
+          <button class="btn maroon" id="submit-app" style="margin-top:14px;width:100%;">Submit application</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="track-tabs">
+          <button data-track="active" class="active">Active</button>
+          <button data-track="closed">Closed</button>
+        </div>
+        <div class="ledger" id="student-ledger"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-department">
+    <h2 class="section-title" id="dept-title">Processing desk</h2>
+    <p class="section-sub" id="dept-sub">Applications currently at your department's stage of the forwarding sequence.</p>
+    <select class="dept-picker" id="dept-picker" style="display:none;"></select>
+    <div class="metrics" id="dept-metrics"></div>
+    <div class="panel"><div class="ledger" id="dept-ledger"></div></div>
+  </section>
+
+  <section class="screen" id="screen-registrar">
+    <h2 class="section-title">Office of the Registrar</h2>
+    <p class="section-sub">Final review, signing, and issuance on the university letterhead.</p>
+    <div class="panel"><p class="label">Awaiting issuance</p><div class="ledger" id="registrar-ledger"></div></div>
+    <div class="panel" id="registrar-issued-panel" style="display:none;">
+      <p class="label">Just issued</p>
+      <div id="certificate-slot"></div>
+      <div class="no-print" style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn ghost small" onclick="window.print()">Print / save as PDF</button>
+        <button class="btn ghost small" id="close-cert">Close</button>
+      </div>
+    </div>
+    <div class="panel"><p class="label">Issued certificates</p><div class="ledger" id="issued-log"></div></div>
+  </section>
+
+  <section class="screen" id="screen-verify">
+    <h2 class="section-title">Verify a certificate</h2>
+    <p class="section-sub">Public endpoint — confirms a certificate is genuine without exposing the student's private record.</p>
+    <div class="panel">
+      <p class="label">Certificate number or verification token</p>
+      <input type="text" id="verify-input">
+      <button class="btn" id="verify-btn" style="margin-top:10px;">Verify</button>
+      <div id="verify-result" style="margin-top:16px;"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-users">
+    <h2 class="section-title">Users &amp; roles</h2>
+    <p class="section-sub">Create accounts, assign roles, and deactivate access.</p>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <p class="label" style="margin:0;">Accounts</p>
+        <button class="btn small" id="add-user-btn">Add user</button>
+      </div>
+      <div class="ledger" id="users-ledger"></div>
+    </div>
+  </section>
+
+</main>
+<footer class="note">Connected to the live API and PostgreSQL database — actions here are real and persist across sessions.</footer>
+</div>
+
+<div class="overlay" id="reason-overlay">
+  <div class="modal">
+    <h3 id="reason-title">Reject application</h3>
+    <p class="label" id="reason-label">Reason (required)</p>
+    <textarea id="reason-text"></textarea>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="reason-cancel">Cancel</button>
+      <button class="btn maroon small" id="reason-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="user-overlay">
+  <div class="modal">
+    <h3>Add user</h3>
+    <p class="label">Full name</p><input type="text" id="new-user-name">
+    <p class="label" style="margin-top:10px;">Username</p><input type="text" id="new-user-username">
+    <p class="label" style="margin-top:10px;">Role</p><select id="new-user-role"></select>
+    <p class="label" style="margin-top:10px;">Temporary password</p><input type="text" id="new-user-password" value="changeme123">
+    <div class="modal-actions">
+      <button class="btn ghost small" id="user-cancel">Cancel</button>
+      <button class="btn maroon small" id="user-confirm">Create user</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TOKEN_KEY = "bcis_token";
+  var STATE = { user: null, certTypes: [], applications: [], deptQueue: [], deptCode: null, track: "active", pendingAction: null, selectedCat: null, docAttached: false };
+
+  var STAGE_TO_ROLE = { SCHOOL:"school_admin", EXAM:"exam_admin", FEES_FINAID:"fees_finaid_admin", ADMISSION:"admission_admin", WARDEN:"warden" };
+  var DEPT_LABEL = { SCHOOL:"School's Office", EXAM:"Exam Office", FEES_FINAID:"Fees & Financial Aid Dept", ADMISSION:"Admission Office", WARDEN:"Warden" };
+  var ROLE_LABEL = { student:"Student", school_admin:"School's Office", exam_admin:"Exam Office", fees_finaid_admin:"Fees & Financial Aid Dept", admission_admin:"Admission Office", warden:"Warden", registrar_admin:"Registrar's Office", super_admin:"Super Admin" };
+
+  var DEMO_ACCOUNTS = [
+    {u:"aarav.mehta", p:"student123", n:"Aarav Mehta", r:"Student"},
+    {u:"priya.desai", p:"admin123", n:"Priya Desai", r:"School's Office"},
+    {u:"karan.bose", p:"admin123", n:"Karan Bose", r:"Exam Office"},
+    {u:"meera.iyer", p:"admin123", n:"Meera Iyer", r:"Fees & Financial Aid Dept"},
+    {u:"arjun.rao", p:"admin123", n:"Arjun Rao", r:"Admission Office"},
+    {u:"sunita.varma", p:"admin123", n:"Sunita Varma", r:"Warden"},
+    {u:"fatima.qureshi", p:"admin123", n:"Fatima Qureshi", r:"Registrar's Office"},
+    {u:"admin", p:"super123", n:"Super Admin", r:"Super Admin"}
+  ];
+
+  function api(path, opts){
+    opts = opts || {};
+    var headers = Object.assign({"Content-Type":"application/json"}, opts.headers || {});
+    var token = localStorage.getItem(TOKEN_KEY);
+    if(token) headers.Authorization = "Bearer " + token;
+    return fetch(path, Object.assign({}, opts, {headers: headers}))
+      .then(function(r){
+        return r.json().then(function(body){
+          if(!r.ok) throw (body && body.error) || {message:"Request failed"};
+          return body;
+        });
+      });
+  }
+
+  function fmtDate(ts){
+    var d = new Date(ts);
+    return d.toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"}) + " · " + d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; });
+  }
+  function pill(status){
+    var map = {IN_PROGRESS:["active","In progress"], DOCS_REQUESTED:["docs","Documents requested"], ISSUED:["issued","Issued"], REJECTED:["rejected","Rejected"]};
+    var m = map[status] || ["active", status];
+    return '<span class="pill '+m[0]+'"><span class="dot"></span>'+m[1]+'</span>';
+  }
+  function accentColor(status){
+    if(status==="ISSUED") return "var(--sage)";
+    if(status==="REJECTED") return "var(--brick)";
+    if(status==="DOCS_REQUESTED") return "var(--brick)";
+    return "var(--gold)";
+  }
+
+  // ---------------- LOGIN ----------------
+  document.querySelectorAll(".login-tab").forEach(function(tab){
+    tab.addEventListener("click", function(){
+      document.querySelectorAll(".login-tab").forEach(function(x){x.classList.remove("active");});
+      tab.classList.add("active");
+      document.querySelectorAll(".login-pane").forEach(function(x){x.classList.remove("active");});
+      document.getElementById("login-pane-"+tab.dataset.tab).classList.add("active");
+    });
+  });
+  function renderDemoAccounts(){
+    document.getElementById("demo-account-list").innerHTML = DEMO_ACCOUNTS.map(function(a){
+      return '<div class="demo-account-row"><div class="who"><strong>'+a.n+'</strong>'+a.r+'</div>'+
+             '<button type="button" class="btn ghost small" data-u="'+a.u+'" data-p="'+a.p+'">Use</button></div>';
+    }).join("");
+  }
+  document.getElementById("demo-account-list").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-u]"); if(!b) return;
+    document.getElementById("login-username").value = b.dataset.u;
+    document.getElementById("login-password").value = b.dataset.p;
+  });
+  function doLoginSubmit(){
+    var username = document.getElementById("login-username").value;
+    var password = document.getElementById("login-password").value;
+    var errEl = document.getElementById("login-error");
+    errEl.style.display = "none";
+    api("/api/auth/login", {method:"POST", body: JSON.stringify({username:username, password:password})})
+      .then(function(res){
+        localStorage.setItem(TOKEN_KEY, res.token);
+        STATE.user = res.user;
+        enterApp();
+      })
+      .catch(function(e){
+        errEl.textContent = e.message || "Sign-in failed.";
+        errEl.style.display = "block";
+      });
+  }
+  document.getElementById("login-submit").addEventListener("click", doLoginSubmit);
+  document.getElementById("login-password").addEventListener("keydown", function(e){ if(e.key==="Enter") doLoginSubmit(); });
+  document.getElementById("logout-btn").addEventListener("click", function(){
+    localStorage.removeItem(TOKEN_KEY);
+    STATE.user = null;
+    showLoginScreen();
+  });
+
+  function runVerify(inputId, resultId){
+    var q = document.getElementById(inputId).value.trim();
+    var res = document.getElementById(resultId);
+    if(!q){ res.innerHTML=""; return; }
+    fetch("/api/certificates/verify?q=" + encodeURIComponent(q)).then(function(r){return r.json();}).then(function(data){
+      if(data.genuine){
+        res.innerHTML = '<div class="banner clear"><span class="dot"></span> Genuine — issued and on record.</div>'+
+          '<div class="panel" style="margin-top:10px;">'+
+          '<div class="field-row"><span>Certificate</span><span>'+escapeHtml(data.certificateType)+'</span></div>'+
+          '<div class="field-row"><span>Holder</span><span>'+escapeHtml(data.holder)+'</span></div>'+
+          '<div class="field-row"><span>Certificate no.</span><span>'+escapeHtml(data.certificateNumber)+'</span></div>'+
+          '<div class="field-row"><span>Issued</span><span>'+fmtDate(data.issuedAt)+'</span></div></div>';
+      } else {
+        res.innerHTML = '<div class="banner pending"><span class="dot"></span> No matching certificate found for that number or token.</div>';
+      }
+    });
+  }
+  document.getElementById("verify-btn").addEventListener("click", function(){ runVerify("verify-input","verify-result"); });
+  document.getElementById("verify-btn-pub").addEventListener("click", function(){ runVerify("verify-input-pub","verify-result-pub"); });
+
+  function showLoginScreen(){
+    document.getElementById("app-shell").style.display = "none";
+    document.getElementById("login-screen").style.display = "flex";
+    document.getElementById("login-username").value = "";
+    document.getElementById("login-password").value = "";
+    document.getElementById("login-error").style.display = "none";
+    renderDemoAccounts();
+  }
+
+  // ---------------- NAV ----------------
+  var ROLE_NAV = {
+    student: [{screen:"student", label:"My applications"}],
+    school_admin: [{screen:"department", label:"Processing desk"}],
+    exam_admin: [{screen:"department", label:"Processing desk"}],
+    fees_finaid_admin: [{screen:"department", label:"Processing desk"}],
+    admission_admin: [{screen:"department", label:"Processing desk"}],
+    warden: [{screen:"department", label:"Processing desk"}],
+    registrar_admin: [{screen:"registrar", label:"Registrar"}],
+    super_admin: [{screen:"student", label:"Student"},{screen:"department", label:"Processing desk"},{screen:"registrar", label:"Registrar"},{screen:"users", label:"Users & roles"}]
+  };
+  function buildNav(){
+    var nav = document.getElementById("role-nav");
+    var items = (ROLE_NAV[STATE.user.role] || []).slice();
+    items.push({screen:"verify", label:"Verify a certificate"});
+    nav.innerHTML = items.map(function(it, idx){
+      return '<button data-screen="'+it.screen+'" class="'+(idx===0?"active":"")+'">'+it.label+'</button>';
+    }).join("");
+    showScreen(items[0].screen);
+    document.getElementById("user-badge-name").textContent = STATE.user.name;
+    document.getElementById("user-badge-role").textContent = ROLE_LABEL[STATE.user.role] || STATE.user.role;
+  }
+  function showScreen(name){
+    document.querySelectorAll("#role-nav button").forEach(function(b){b.classList.toggle("active", b.dataset.screen===name);});
+    document.querySelectorAll(".screen").forEach(function(s){s.classList.remove("active");});
+    document.getElementById("screen-"+name).classList.add("active");
+    if(name==="student") loadStudentScreen();
+    if(name==="department") loadDepartmentScreen();
+    if(name==="registrar") loadRegistrarScreen();
+    if(name==="users") loadUsersScreen();
+  }
+  document.getElementById("role-nav").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-screen]"); if(!b) return;
+    showScreen(b.dataset.screen);
+  });
+
+  function enterApp(){
+    document.getElementById("login-screen").style.display = "none";
+    document.getElementById("app-shell").style.display = "block";
+    buildNav();
+  }
+
+  // ---------------- STUDENT ----------------
+  function loadStudentScreen(){
+    document.getElementById("student-profile").innerHTML =
+      '<div class="field-row"><span>Name</span><span>'+escapeHtml(STATE.user.name)+'</span></div>'+
+      '<div class="field-row"><span>Student ID</span><span>'+escapeHtml(STATE.user.studentSdmisId||"—")+'</span></div>'+
+      '<div class="field-row"><span>Program</span><span>'+escapeHtml(STATE.user.program||"—")+'</span></div>'+
+      '<div class="field-row"><span>School</span><span>'+escapeHtml(STATE.user.schoolDept||"—")+'</span></div>'+
+      '<div class="field-row"><span>Residency</span><span>'+escapeHtml(STATE.user.residency||"—")+'</span></div>';
+
+    var p1 = STATE.certTypes.length ? Promise.resolve(STATE.certTypes) : api("/api/certificate-types").then(function(d){STATE.certTypes=d; return d;});
+    p1.then(buildCatGrid);
+    refreshStudentApplications();
+  }
+  function buildCatGrid(types){
+    var grid = document.getElementById("cat-grid");
+    grid.innerHTML = "";
+    types.forEach(function(c){
+      var b = document.createElement("button");
+      b.type="button"; b.className="cat-card"; b.dataset.code=c.code;
+      var sub = c.requires_undertaking ? "Undertaking required" : (c.requires_document ? "Document required" : "No document needed");
+      b.innerHTML = escapeHtml(c.label) + "<small>"+sub+"</small>";
+      b.addEventListener("click", function(){
+        STATE.selectedCat = c;
+        document.querySelectorAll(".cat-card").forEach(function(x){x.classList.remove("selected");});
+        b.classList.add("selected");
+        document.getElementById("doc-field").style.display = c.requires_document ? "block" : "none";
+        document.getElementById("undertaking-field").style.display = c.requires_undertaking ? "block" : "none";
+      });
+      grid.appendChild(b);
+    });
+  }
+  document.getElementById("upload-zone").addEventListener("click", function(){
+    STATE.docAttached = true;
+    this.classList.add("has-file");
+    this.textContent = "Attached: supporting-document.pdf (simulated)";
+  });
+  document.getElementById("submit-app").addEventListener("click", function(){
+    var c = STATE.selectedCat;
+    if(!c){ alert("Choose a certificate category first."); return; }
+    if(c.requires_document && !STATE.docAttached){ alert("This category needs a supporting document."); return; }
+    var undertakingOk = document.getElementById("undertaking-check").checked;
+    if(c.requires_undertaking && !undertakingOk){ alert("Confirm the signed undertaking is attached."); return; }
+
+    api("/api/applications", {method:"POST", body: JSON.stringify({
+      certTypeCode: c.code,
+      purposeNote: document.getElementById("purpose-note").value,
+      documentAttached: c.requires_document ? "supporting-document.pdf" : null,
+      undertakingConfirmed: c.requires_undertaking ? undertakingOk : undefined
+    })}).then(function(){
+      STATE.selectedCat = null; STATE.docAttached = false;
+      document.querySelectorAll(".cat-card").forEach(function(x){x.classList.remove("selected");});
+      document.getElementById("doc-field").style.display="none";
+      document.getElementById("undertaking-field").style.display="none";
+      document.getElementById("upload-zone").classList.remove("has-file");
+      document.getElementById("upload-zone").textContent="Click to attach a file";
+      document.getElementById("purpose-note").value="";
+      document.querySelector('.track-tabs button[data-track="active"]').click();
+      refreshStudentApplications();
+    }).catch(function(e){ alert(e.message || "Could not submit the application."); });
+  });
+  document.querySelector("#screen-student .track-tabs").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-track]"); if(!b) return;
+    document.querySelectorAll("#screen-student .track-tabs button").forEach(function(x){x.classList.remove("active");});
+    b.classList.add("active"); STATE.track = b.dataset.track;
+    renderStudentLedger();
+  });
+  function refreshStudentApplications(){
+    api("/api/applications/me").then(function(apps){ STATE.applications = apps; renderStudentLedger(); });
+  }
+  function renderStudentLedger(){
+    var wrap = document.getElementById("student-ledger");
+    var closedStatuses = ["ISSUED","REJECTED"];
+    var list = STATE.applications.filter(function(a){
+      var closed = closedStatuses.indexOf(a.status) !== -1;
+      return STATE.track==="active" ? !closed : closed;
+    });
+    if(!list.length){ wrap.innerHTML = '<div class="ledger-empty">Nothing here yet.</div>'; return; }
+    wrap.innerHTML = list.map(function(a){
+      var reasonLine = (a.status==="REJECTED" && a.rejection_reason) ? '<div class="meta" style="color:var(--brick);margin-top:4px;">Reason: '+escapeHtml(a.rejection_reason)+'</div>' : "";
+      return '<div class="ledger-row" data-id="'+a.application_id+'">'+
+        '<div class="accent" style="background:'+accentColor(a.status)+'"></div>'+
+        '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
+        '<div class="meta">Stage '+Math.min(a.current_stage_index+1, a.stages.length+1)+' of '+(a.stages.length+1)+'</div>'+
+        reasonLine+
+        '<details class="timeline"><summary>Status history</summary><ul class="hist" data-events-for="'+a.application_id+'"><li>Loading…</li></ul></details>'+
+        '</div><div class="actions">'+pill(a.status)+
+        (a.status==="DOCS_REQUESTED" ? '<button class="btn small" data-resubmit="'+a.application_id+'">Resubmit</button>' : '')+
+        '</div></div>';
+    }).join("");
+    wrap.querySelectorAll("details.timeline").forEach(function(d){
+      d.addEventListener("toggle", function(){
+        if(!d.open) return;
+        var id = d.querySelector("[data-events-for]").dataset.eventsFor;
+        api("/api/applications/"+id+"/events").then(function(events){
+          d.querySelector("ul.hist").innerHTML = events.map(function(ev){ return "<li>"+escapeHtml(ev.note||ev.action)+" — "+fmtDate(ev.occurred_at)+"</li>"; }).join("");
+        });
+      }, {once:true});
+    });
+    wrap.querySelectorAll("[data-resubmit]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        api("/api/applications/"+btn.dataset.resubmit+"/resubmit", {method:"POST", body: JSON.stringify({documentAttached:"resubmitted-document.pdf"})})
+          .then(refreshStudentApplications).catch(function(e){ alert(e.message); });
+      });
+    });
+  }
+
+  // ---------------- DEPARTMENT DESK ----------------
+  function loadDepartmentScreen(){
+    var picker = document.getElementById("dept-picker");
+    if(STATE.user.role === "super_admin"){
+      picker.style.display = "inline-block";
+      if(!picker.dataset.built){
+        picker.innerHTML = Object.keys(DEPT_LABEL).map(function(k){ return '<option value="'+k+'">'+DEPT_LABEL[k]+'</option>'; }).join("");
+        picker.dataset.built = "1";
+        picker.addEventListener("change", function(){ STATE.deptCode = picker.value; refreshDeptQueue(); });
+      }
+      STATE.deptCode = STATE.deptCode || picker.value;
+    } else {
+      picker.style.display = "none";
+      STATE.deptCode = Object.keys(STAGE_TO_ROLE).filter(function(k){ return STAGE_TO_ROLE[k]===STATE.user.role; })[0];
+    }
+    document.getElementById("dept-title").textContent = (DEPT_LABEL[STATE.deptCode]||"Processing desk") + " — verification queue";
+    refreshDeptQueue();
+  }
+  function refreshDeptQueue(){
+    var q = STATE.user.role === "super_admin" ? "?dept="+encodeURIComponent(STATE.deptCode) : "";
+    api("/api/department/queue"+q).then(function(res){
+      STATE.deptQueue = res.applications;
+      document.getElementById("dept-metrics").innerHTML =
+        '<div class="metric"><div class="num">'+res.applications.length+'</div><div class="cap">Pending your review</div></div>'+
+        '<div class="metric"><div class="num">'+res.dept+'</div><div class="cap">Department stage code</div></div>'+
+        '<div class="metric"><div class="num">'+(DEPT_LABEL[res.dept]||"—")+'</div><div class="cap">Department name</div></div>';
+      var wrap = document.getElementById("dept-ledger");
+      if(!res.applications.length){ wrap.innerHTML = '<div class="ledger-empty">Queue is clear.</div>'; return; }
+      wrap.innerHTML = res.applications.map(function(a){
+        var actions =
+          '<button class="btn small" data-act="approve" data-id="'+a.application_id+'">Approve &amp; forward</button>'+
+          '<button class="btn ghost small" data-act="request_docs" data-id="'+a.application_id+'">Request documents</button>'+
+          '<button class="btn maroon small" data-act="reject" data-id="'+a.application_id+'">Reject</button>';
+        return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
+          '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+'</div></div>'+
+          '<div class="actions">'+actions+'</div></div>';
+      }).join("");
+    });
+  }
+  document.getElementById("dept-ledger").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-act]"); if(!b) return;
+    var id = b.dataset.id, action = b.dataset.act;
+    if(action==="approve"){
+      api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:"approve"})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
+    } else {
+      openReasonModal(action==="reject"?"Reject application":"Request additional documents", "Reason (required)", function(text){
+        api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:action, reason:text})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
+      });
+    }
+  });
+
+  // ---------------- REGISTRAR ----------------
+  function loadRegistrarScreen(){ refreshRegistrarQueue(); refreshIssuedLog(); }
+  function refreshRegistrarQueue(){
+    api("/api/registrar/queue").then(function(apps){
+      var wrap = document.getElementById("registrar-ledger");
+      if(!apps.length){ wrap.innerHTML = '<div class="ledger-empty">Nothing awaiting issuance.</div>'; return; }
+      wrap.innerHTML = apps.map(function(a){
+        var actions = '<button class="btn small" data-act="issue" data-id="'+a.application_id+'">Generate &amp; sign</button>'+
+                       '<button class="btn ghost small" data-act="rreject" data-id="'+a.application_id+'">Reject</button>';
+        return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
+          '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+'</div></div>'+
+          '<div class="actions">'+actions+'</div></div>';
+      }).join("");
+    });
+  }
+  function refreshIssuedLog(){
+    api("/api/registrar/certificates").then(function(certs){
+      var wrap = document.getElementById("issued-log");
+      if(!certs.length){ wrap.innerHTML = '<div class="ledger-empty">No certificates issued yet.</div>'; return; }
+      wrap.innerHTML = certs.map(function(c){
+        return '<div class="ledger-row"><div class="accent" style="background:'+(c.revoked?"var(--brick)":"var(--sage)")+'"></div>'+
+          '<div class="main"><div class="code">'+escapeHtml(c.application_code)+' · '+escapeHtml(c.cert_type_label)+'</div>'+
+          '<div class="meta">'+escapeHtml(c.student_name)+' — '+escapeHtml(c.certificate_number)+(c.revoked?" · revoked":"")+'</div></div>'+
+          '<div class="actions">'+
+            (c.revoked ? '' : '<button class="btn ghost small" data-revoke="'+c.certificate_id+'">Revoke</button>')+
+          '</div></div>';
+      }).join("");
+    });
+  }
+  document.getElementById("registrar-ledger").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-act]"); if(!b) return;
+    var id = b.dataset.id;
+    if(b.dataset.act==="issue"){
+      api("/api/registrar/applications/"+id+"/generate-certificate", {method:"POST"}).then(function(res){
+        showCertificate(res.certificate, res.html);
+        refreshRegistrarQueue(); refreshIssuedLog();
+      }).catch(function(e2){ alert(e2.message); });
+    } else {
+      openReasonModal("Reject application", "Reason (required)", function(text){
+        api("/api/registrar/applications/"+id+"/reject", {method:"POST", body: JSON.stringify({reason:text})}).then(refreshRegistrarQueue).catch(function(e2){alert(e2.message);});
+      });
+    }
+  });
+  document.getElementById("issued-log").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-revoke]"); if(!b) return;
+    openReasonModal("Revoke certificate", "Reason (required)", function(text){
+      api("/api/registrar/certificates/"+b.dataset.revoke+"/revoke", {method:"POST", body: JSON.stringify({reason:text})}).then(refreshIssuedLog).catch(function(e2){alert(e2.message);});
+    });
+  });
+  function showCertificate(cert, html){
+    document.getElementById("registrar-issued-panel").style.display = "block";
+    document.getElementById("certificate-slot").innerHTML =
+      '<div class="cert-wrap">'+
+        '<img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">'+
+        '<div class="cert-body">'+html+'<div id="qr-canvas"></div></div>'+
+        '<img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">'+
+      '</div>';
+    document.getElementById("qr-canvas").innerHTML = "";
+    try{ new QRCode(document.getElementById("qr-canvas"), {text: cert.qr_verification_token, width:84, height:84, colorDark:"#1C2333", colorLight:"#FFFFFF"}); }
+    catch(e){ document.getElementById("qr-canvas").textContent = "[QR: "+cert.qr_verification_token+"]"; }
+  }
+  document.getElementById("close-cert").addEventListener("click", function(){ document.getElementById("registrar-issued-panel").style.display="none"; });
+
+  // ---------------- USERS & ROLES ----------------
+  var ROLES_CACHE = [];
+  function loadUsersScreen(){
+    Promise.all([api("/api/roles"), api("/api/users")]).then(function(res){
+      ROLES_CACHE = res[0];
+      renderUsers(res[1]);
+    });
+  }
+  function renderUsers(users){
+    document.getElementById("users-ledger").innerHTML = users.map(function(u){
+      var isSelf = u.user_id === STATE.user.id;
+      var roleOptions = ROLES_CACHE.map(function(r){ return '<option value="'+r.role_code+'" '+(r.role_code===u.role_code?"selected":"")+'>'+r.label+'</option>'; }).join("");
+      return '<div class="ledger-row"><div class="accent" style="background:'+(u.active?"var(--sage)":"var(--slate)")+'"></div>'+
+        '<div class="main"><div class="code">'+escapeHtml(u.name)+(isSelf?" · you":"")+'</div><div class="meta">'+escapeHtml(u.username)+(u.active?"":" · deactivated")+'</div></div>'+
+        '<div class="actions"><select data-uid="'+u.user_id+'" class="role-select" style="width:auto;margin:0;" '+(isSelf?"disabled":"")+'>'+roleOptions+'</select>'+
+        '<button class="btn '+(u.active?"ghost":"maroon")+' small" data-toggle="'+u.user_id+'" data-active="'+u.active+'" '+(isSelf?"disabled":"")+'>'+(u.active?"Deactivate":"Activate")+'</button></div></div>';
+    }).join("");
+  }
+  document.getElementById("users-ledger").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-toggle]"); if(!b) return;
+    api("/api/users/"+b.dataset.toggle, {method:"PATCH", body: JSON.stringify({active: b.dataset.active !== "true"})}).then(loadUsersScreen).catch(function(e2){alert(e2.message);});
+  });
+  document.getElementById("users-ledger").addEventListener("change", function(e){
+    var sel = e.target.closest("select.role-select"); if(!sel) return;
+    api("/api/users/"+sel.dataset.uid, {method:"PATCH", body: JSON.stringify({roleCode: sel.value})}).then(loadUsersScreen).catch(function(e2){alert(e2.message);});
+  });
+  document.getElementById("add-user-btn").addEventListener("click", function(){
+    document.getElementById("new-user-name").value=""; document.getElementById("new-user-username").value="";
+    document.getElementById("new-user-password").value="changeme123";
+    document.getElementById("new-user-role").innerHTML = ROLES_CACHE.map(function(r){ return '<option value="'+r.role_code+'">'+r.label+'</option>'; }).join("");
+    document.getElementById("user-overlay").classList.add("open");
+  });
+  document.getElementById("user-cancel").addEventListener("click", function(){ document.getElementById("user-overlay").classList.remove("open"); });
+  document.getElementById("user-confirm").addEventListener("click", function(){
+    var body = { name: document.getElementById("new-user-name").value.trim(), username: document.getElementById("new-user-username").value.trim(),
+      password: document.getElementById("new-user-password").value.trim() || "changeme123", roleCode: document.getElementById("new-user-role").value };
+    if(!body.name || !body.username){ alert("Name and username are required."); return; }
+    api("/api/users", {method:"POST", body: JSON.stringify(body)}).then(function(){
+      document.getElementById("user-overlay").classList.remove("open");
+      loadUsersScreen();
+    }).catch(function(e){ alert(e.message); });
+  });
+
+  // ---------------- MODAL ----------------
+  var overlay = document.getElementById("reason-overlay");
+  function openReasonModal(title, label, onConfirm){
+    document.getElementById("reason-title").textContent = title;
+    document.getElementById("reason-label").textContent = label;
+    document.getElementById("reason-text").value = "";
+    overlay.classList.add("open");
+    STATE.pendingAction = onConfirm;
+  }
+  document.getElementById("reason-cancel").addEventListener("click", function(){ overlay.classList.remove("open"); });
+  document.getElementById("reason-confirm").addEventListener("click", function(){
+    var text = document.getElementById("reason-text").value.trim();
+    if(!text){ alert("A reason is required."); return; }
+    overlay.classList.remove("open");
+    if(STATE.pendingAction) STATE.pendingAction(text);
+  });
+
+  // ---------------- INIT ----------------
+  var token = localStorage.getItem(TOKEN_KEY);
+  if(token){
+    api("/api/me").then(function(user){ STATE.user = user; enterApp(); }).catch(function(){ localStorage.removeItem(TOKEN_KEY); showLoginScreen(); });
+  } else {
+    showLoginScreen();
+  }
+})();
+</script>
+</body>
+</html>
