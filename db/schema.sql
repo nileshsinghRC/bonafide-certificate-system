@@ -2,6 +2,8 @@
 -- Digital Bonafide Certificate Issuance System
 -- Anant National University — PostgreSQL schema
 -- Run once against a fresh database: psql "$DATABASE_URL" -f db/schema.sql
+-- For an existing database already running the v1 schema, apply
+-- db/migrations/001_must_change_password.sql and 002_workflow_v2.sql instead.
 -- ============================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -30,6 +32,11 @@ CREATE TABLE IF NOT EXISTS users (
     school_dept   VARCHAR(100),
     residency     VARCHAR(20),             -- DAY_SCHOLAR / HOSTELLER, student only
     active        BOOLEAN NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- forced on accounts created by bulk import / SDMIS sync
+    profile_picture_url TEXT,              -- synced from SDMIS on every login
+    profile_picture_synced_at TIMESTAMPTZ,
+    tuition_fee_amount NUMERIC(12,2),      -- placeholder until a real central fee DB is wired (see README)
+    hostel_fee_amount NUMERIC(12,2),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -54,6 +61,7 @@ CREATE TABLE IF NOT EXISTS certificate_types (
 CREATE TYPE application_status AS ENUM (
     'IN_PROGRESS',
     'DOCS_REQUESTED',
+    'RETURNED_TO_DEPARTMENT',  -- Registrar sent it back with a mandatory comment
     'ISSUED',
     'REJECTED'
 );
@@ -74,26 +82,45 @@ CREATE TABLE IF NOT EXISTS applications (
     status                    application_status NOT NULL DEFAULT 'IN_PROGRESS',
     rejection_reason          TEXT,
     sdmis_profile_snapshot    JSONB,
-    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+
+    -- Granular tracking (current level is derived: stages[current_stage_index]
+    -- when current_stage_index < stages.length, else 'REGISTRAR')
+    assigned_reviewer_id      UUID REFERENCES users(user_id),      -- last person to act on it
+    level_entered_at           TIMESTAMPTZ NOT NULL DEFAULT now(), -- drives "pending duration" on every dashboard
+
+    -- Registrar return loop
+    return_comment              TEXT,                               -- mandatory explanation on a Registrar return
+
+    -- Department inline editing + fee-in-words snapshot
+    certificate_draft             JSONB,
+    fee_snapshot                    JSONB,
+
+    created_at                       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_applications_student ON applications(student_user_id);
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 CREATE INDEX IF NOT EXISTS idx_applications_cert_type ON applications(cert_type_id);
 CREATE INDEX IF NOT EXISTS idx_applications_created_at ON applications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_applications_assigned_reviewer ON applications(assigned_reviewer_id);
 
--- ---------------- APPLICATION EVENTS (audit trail / status history) ----------------
-CREATE TABLE IF NOT EXISTS application_events (
+-- ---------------- ACTIVITY LOGS (cross-stakeholder, immutable) ----------------
+-- Read directly by every dashboard (Student, Department, Registrar, Super
+-- Admin), scoped to the applications each role can see.
+CREATE TABLE IF NOT EXISTS activity_logs (
     event_id        BIGSERIAL PRIMARY KEY,
     application_id  UUID NOT NULL REFERENCES applications(application_id) ON DELETE CASCADE,
     actor_user_id    UUID REFERENCES users(user_id),
     actor_name        VARCHAR(150),
     actor_role         VARCHAR(30),
-    action              VARCHAR(40) NOT NULL,   -- SUBMITTED / STAGE_APPROVED / DOCS_REQUESTED / REJECTED / ISSUED
-    note                 TEXT,
-    occurred_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+    action              VARCHAR(40) NOT NULL,   -- SUBMITTED / EDITED / STAGE_APPROVED / RETURNED / RESUBMITTED_DIRECT / DOCS_REQUESTED / REJECTED / ISSUED / SIGNATURE_UPLOADED / PASSWORD_CHANGED
+    from_stage           VARCHAR(30),
+    to_stage               VARCHAR(30),
+    note                     TEXT,             -- e.g. the Registrar's mandatory return comment
+    occurred_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_app_events_app ON application_events(application_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_activity_app ON activity_logs(application_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_activity_actor ON activity_logs(actor_user_id);
 
 -- ---------------- DOCUMENTS ----------------
 CREATE TABLE IF NOT EXISTS documents (
@@ -106,8 +133,8 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE INDEX IF NOT EXISTS idx_documents_app ON documents(application_id);
 
--- ---------------- CERTIFICATES ISSUED ----------------
-CREATE TABLE IF NOT EXISTS certificates_issued (
+-- ---------------- CERTIFICATES ----------------
+CREATE TABLE IF NOT EXISTS certificates (
     certificate_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     application_id        UUID NOT NULL UNIQUE REFERENCES applications(application_id),
     certificate_number    VARCHAR(40) NOT NULL UNIQUE,
@@ -115,24 +142,21 @@ CREATE TABLE IF NOT EXISTS certificates_issued (
     qr_verification_token   TEXT NOT NULL UNIQUE,
     issued_by_user_id        UUID REFERENCES users(user_id),
     issued_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked                    BOOLEAN NOT NULL DEFAULT FALSE,
-    revoked_at                  TIMESTAMPTZ,
-    revoked_reason               TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_certs_qr_token ON certificates_issued(qr_verification_token);
-CREATE INDEX IF NOT EXISTS idx_certs_number ON certificates_issued(certificate_number);
 
--- ---------------- AUDIT LOG (generic, for admin/user-management actions) ----------------
-CREATE TABLE IF NOT EXISTS audit_log (
-    audit_id       BIGSERIAL PRIMARY KEY,
-    table_name     VARCHAR(60) NOT NULL,
-    record_id      UUID,
-    action         VARCHAR(30) NOT NULL,
-    performed_by   UUID REFERENCES users(user_id),
-    detail         JSONB,
-    performed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    -- Registrar signature upload — composited onto the PDF at issuance time
+    registrar_signature_data   TEXT,          -- base64 data: URL of the uploaded signature image
+    signed_at                    TIMESTAMPTZ,
+
+    -- Automated notification
+    notified_at                   TIMESTAMPTZ,
+    notification_channel            VARCHAR(20),
+
+    revoked                          BOOLEAN NOT NULL DEFAULT FALSE,
+    revoked_at                         TIMESTAMPTZ,
+    revoked_reason                       TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_audit_table_record ON audit_log(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_certs_qr_token ON certificates(qr_verification_token);
+CREATE INDEX IF NOT EXISTS idx_certs_number ON certificates(certificate_number);
 
 -- ---------------- updated_at trigger ----------------
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$

@@ -98,6 +98,12 @@
   .modal{background:var(--parchment-raised);border:1px solid var(--line);border-radius:6px;padding:22px;max-width:420px;width:100%;}
   .modal h3{font-family:var(--font-display);font-weight:500;font-size:19px;margin:0 0 10px;}
   .modal .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+  .import-textarea{width:100%;min-height:120px;font-family:monospace;font-size:12.5px;}
+  .import-result{margin-top:14px;font-size:13px;}
+  .import-result table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12.5px;}
+  .import-result th,.import-result td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);}
+  .import-result th{color:var(--slate);font-weight:600;font-size:11px;text-transform:uppercase;}
+  .import-result code{background:var(--gold-soft);color:var(--ink);padding:1px 5px;border-radius:3px;}
   .cert-wrap{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0;margin-top:16px;overflow:hidden;}
   .cert-wrap img.letterhead-band{display:block;width:100%;height:auto;}
   .cert-body{padding:10px 34px 26px;color:#111;font-size:14px;line-height:1.7;}
@@ -110,6 +116,19 @@
   .empty-state{text-align:center;padding:40px 20px;color:var(--slate);}
   footer.note{max-width:1080px;margin:0 auto;padding:0 24px 40px;font-size:12px;color:var(--slate);}
   select.dept-picker{width:auto;display:inline-block;margin:0 0 14px;}
+  .avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;border:1.5px solid var(--gold);flex:none;}
+  .user-badge{gap:12px;}
+  .user-badge-links{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+  .link-btn{background:none;border:none;color:#C9C4B6;font-size:11.5px;cursor:pointer;padding:0;text-decoration:underline;}
+  .link-btn:hover{color:#fff;}
+  .track-steps{display:flex;align-items:center;gap:4px;margin:6px 0 2px;flex-wrap:wrap;}
+  .track-step{display:flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 8px;border-radius:20px;background:var(--slate-bg);color:var(--slate);}
+  .track-step.completed{background:var(--sage-bg);color:var(--sage);}
+  .track-step.current{background:var(--gold-soft);color:var(--gold);font-weight:600;}
+  .track-arrow{color:var(--line);font-size:11px;}
+  .return-banner{background:var(--brick-bg);color:var(--brick);border-radius:4px;padding:9px 12px;font-size:12.5px;margin-top:6px;}
+  .return-banner strong{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;}
+  .draft-view .field-row span:last-child{max-width:60%;}
   @media print{header.shell,nav.roles,.no-print,footer.note{display:none !important;} body{background:#fff;} main{padding:0;max-width:none;} .panel{border:none;padding:0;}}
 </style>
 </head>
@@ -155,8 +174,12 @@
     </div>
     <nav class="roles" id="role-nav"></nav>
     <div class="user-badge">
+      <img class="avatar" id="user-badge-avatar" src="" alt="">
       <div class="user-badge-text"><strong id="user-badge-name"></strong><span id="user-badge-role"></span></div>
-      <button class="btn ghost small" id="logout-btn">Sign out</button>
+      <div class="user-badge-links">
+        <button class="link-btn" id="change-password-link">Change password</button>
+        <button class="btn ghost small" id="logout-btn">Sign out</button>
+      </div>
     </div>
   </div>
 </header>
@@ -170,7 +193,10 @@
       <div>
         <div class="panel">
           <p class="label">Student profile</p>
-          <div id="student-profile"></div>
+          <div style="display:flex;gap:14px;align-items:flex-start;">
+            <img class="avatar" id="student-avatar" style="width:56px;height:56px;" src="" alt="">
+            <div id="student-profile" style="flex:1;"></div>
+          </div>
         </div>
         <div class="panel">
           <p class="label">New application</p>
@@ -242,6 +268,13 @@
       </div>
       <div class="ledger" id="users-ledger"></div>
     </div>
+    <div class="panel">
+      <p class="label">Bulk import students</p>
+      <p class="section-sub" style="margin-bottom:8px;">One student per line: <code>email,name,studentSdmisId,program,schoolDept,residency</code>. New accounts get a temporary password shown below — share it securely; they'll be forced to set their own on first login. Existing accounts (matched by email) just get their profile fields refreshed.</p>
+      <textarea class="import-textarea" id="import-textarea" placeholder="aarav.mehta@anu.edu.in,Aarav Mehta,SDM-2023-00451,B.Des Product Design,School of Technology,HOSTELLER"></textarea>
+      <button class="btn small" id="import-btn" style="margin-top:8px;">Import</button>
+      <div class="import-result" id="import-result"></div>
+    </div>
   </section>
 
 </main>
@@ -270,6 +303,53 @@
     <div class="modal-actions">
       <button class="btn ghost small" id="user-cancel">Cancel</button>
       <button class="btn maroon small" id="user-confirm">Create user</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="pwchange-overlay">
+  <div class="modal">
+    <h3>Set your password</h3>
+    <p class="label" id="pwchange-note">This account was just created — set a password only you know before continuing.</p>
+    <p class="label" style="margin-top:12px;">New password (min. 8 characters)</p>
+    <input type="text" id="pwchange-new">
+    <p class="label" style="margin-top:10px;">Confirm new password</p>
+    <input type="text" id="pwchange-confirm">
+    <div id="pwchange-error" class="login-error" style="display:none;margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="pwchange-cancel" style="display:none;">Cancel</button>
+      <button class="btn maroon small" id="pwchange-confirm-btn">Set password &amp; continue</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="draft-overlay">
+  <div class="modal" style="max-width:520px;">
+    <h3>Certificate preview</h3>
+    <p class="label">Student name</p><input type="text" id="draft-studentName">
+    <p class="label" style="margin-top:8px;">Programme</p><input type="text" id="draft-programName">
+    <p class="label" style="margin-top:8px;">School / Department</p><input type="text" id="draft-schoolDept">
+    <p class="label" style="margin-top:8px;">Residency</p><input type="text" id="draft-residency">
+    <p class="label" style="margin-top:8px;">Purpose note</p><textarea id="draft-purposeNote"></textarea>
+    <p class="label" style="margin-top:8px;">Tuition fee (in words)</p><input type="text" id="draft-tuitionFeeInWords">
+    <p class="label" style="margin-top:8px;">Hostel fee (in words)</p><input type="text" id="draft-hostelFeeInWords">
+    <div class="modal-actions">
+      <button class="btn ghost small" id="draft-cancel">Close</button>
+      <button class="btn maroon small" id="draft-save">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="issue-overlay">
+  <div class="modal" style="max-width:480px;">
+    <h3>Review &amp; issue certificate</h3>
+    <div id="issue-draft-view" class="draft-view"></div>
+    <p class="label" style="margin-top:12px;">Upload Registrar's signature (PNG/JPEG)</p>
+    <input type="file" id="issue-signature-file" accept="image/png,image/jpeg">
+    <div id="issue-signature-preview" style="margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="issue-cancel">Close</button>
+      <button class="btn maroon small" id="issue-confirm">Sign &amp; issue</button>
     </div>
   </div>
 </div>
@@ -318,7 +398,7 @@
     return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; });
   }
   function pill(status){
-    var map = {IN_PROGRESS:["active","In progress"], DOCS_REQUESTED:["docs","Documents requested"], ISSUED:["issued","Issued"], REJECTED:["rejected","Rejected"]};
+    var map = {IN_PROGRESS:["active","In progress"], DOCS_REQUESTED:["docs","Documents requested"], RETURNED_TO_DEPARTMENT:["docs","Returned for correction"], ISSUED:["issued","Issued"], REJECTED:["rejected","Rejected"]};
     var m = map[status] || ["active", status];
     return '<span class="pill '+m[0]+'"><span class="dot"></span>'+m[1]+'</span>';
   }
@@ -326,7 +406,27 @@
     if(status==="ISSUED") return "var(--sage)";
     if(status==="REJECTED") return "var(--brick)";
     if(status==="DOCS_REQUESTED") return "var(--brick)";
+    if(status==="RETURNED_TO_DEPARTMENT") return "var(--brick)";
     return "var(--gold)";
+  }
+  function levelLabel(lvl){ return lvl==="REGISTRAR" ? "Registrar's Office" : (DEPT_LABEL[lvl] || lvl); }
+  function currentLevelOfApp(a){ return a.current_stage_index >= a.stages.length ? "REGISTRAR" : a.stages[a.current_stage_index]; }
+  function pendingDurationText(levelEnteredAt){
+    var mins = Math.max(0, Math.round((Date.now() - new Date(levelEnteredAt).getTime()) / 60000));
+    if(mins < 60) return mins + "m";
+    var hrs = Math.floor(mins / 60), rem = mins % 60;
+    if(hrs < 24) return hrs + "h " + rem + "m";
+    var days = Math.floor(hrs / 24);
+    return days + "d " + (hrs % 24) + "h";
+  }
+  function trackSteps(a){
+    var levels = a.stages.concat(["REGISTRAR"]);
+    var idx = a.current_stage_index;
+    return '<div class="track-steps">' + levels.map(function(lvl, i){
+      var cls = a.status==="ISSUED" ? "completed" : (i < idx ? "completed" : (i === idx ? "current" : ""));
+      var arrow = i > 0 ? '<span class="track-arrow">&rarr;</span>' : "";
+      return arrow + '<span class="track-step '+cls+'">'+escapeHtml(levelLabel(lvl))+'</span>';
+    }).join("") + '</div>';
   }
 
   // ---------------- LOGIN ----------------
@@ -423,6 +523,7 @@
     showScreen(items[0].screen);
     document.getElementById("user-badge-name").textContent = STATE.user.name;
     document.getElementById("user-badge-role").textContent = ROLE_LABEL[STATE.user.role] || STATE.user.role;
+    document.getElementById("user-badge-avatar").src = STATE.user.profilePictureUrl || "";
   }
   function showScreen(name){
     document.querySelectorAll("#role-nav button").forEach(function(b){b.classList.toggle("active", b.dataset.screen===name);});
@@ -441,11 +542,40 @@
   function enterApp(){
     document.getElementById("login-screen").style.display = "none";
     document.getElementById("app-shell").style.display = "block";
+    if(STATE.user.mustChangePassword){
+      openPasswordChangeModal(true);
+      return;
+    }
     buildNav();
   }
+  function openPasswordChangeModal(forced){
+    document.getElementById("pwchange-note").textContent = forced
+      ? "This account was just created — set a password only you know before continuing."
+      : "Choose a new password for your account.";
+    document.getElementById("pwchange-new").value = "";
+    document.getElementById("pwchange-confirm").value = "";
+    document.getElementById("pwchange-error").style.display = "none";
+    document.getElementById("pwchange-cancel").style.display = forced ? "none" : "inline-block";
+    document.getElementById("pwchange-overlay").classList.add("open");
+  }
+  document.getElementById("change-password-link").addEventListener("click", function(){ openPasswordChangeModal(false); });
+  document.getElementById("pwchange-cancel").addEventListener("click", function(){ document.getElementById("pwchange-overlay").classList.remove("open"); });
+  document.getElementById("pwchange-confirm-btn").addEventListener("click", function(){
+    var a = document.getElementById("pwchange-new").value;
+    var b = document.getElementById("pwchange-confirm").value;
+    var errEl = document.getElementById("pwchange-error");
+    if(a.length < 8){ errEl.textContent = "Password must be at least 8 characters."; errEl.style.display = "block"; return; }
+    if(a !== b){ errEl.textContent = "Passwords don't match."; errEl.style.display = "block"; return; }
+    api("/api/me/password", {method:"POST", body: JSON.stringify({newPassword: a})}).then(function(){
+      STATE.user.mustChangePassword = false;
+      document.getElementById("pwchange-overlay").classList.remove("open");
+      buildNav();
+    }).catch(function(e){ errEl.textContent = e.message || "Could not set the password."; errEl.style.display = "block"; });
+  });
 
   // ---------------- STUDENT ----------------
   function loadStudentScreen(){
+    document.getElementById("student-avatar").src = STATE.user.profilePictureUrl || "";
     document.getElementById("student-profile").innerHTML =
       '<div class="field-row"><span>Name</span><span>'+escapeHtml(STATE.user.name)+'</span></div>'+
       '<div class="field-row"><span>Student ID</span><span>'+escapeHtml(STATE.user.studentSdmisId||"—")+'</span></div>'+
@@ -523,12 +653,15 @@
     if(!list.length){ wrap.innerHTML = '<div class="ledger-empty">Nothing here yet.</div>'; return; }
     wrap.innerHTML = list.map(function(a){
       var reasonLine = (a.status==="REJECTED" && a.rejection_reason) ? '<div class="meta" style="color:var(--brick);margin-top:4px;">Reason: '+escapeHtml(a.rejection_reason)+'</div>' : "";
+      var returnLine = (a.status==="RETURNED_TO_DEPARTMENT" && a.return_comment) ? '<div class="return-banner"><strong>Returned by the Registrar</strong>'+escapeHtml(a.return_comment)+'</div>' : "";
+      var pendingLine = (a.status==="IN_PROGRESS" || a.status==="RETURNED_TO_DEPARTMENT") ?
+        '<div class="meta">Currently with '+escapeHtml(levelLabel(currentLevelOfApp(a)))+' · pending '+pendingDurationText(a.level_entered_at)+'</div>' : "";
       return '<div class="ledger-row" data-id="'+a.application_id+'">'+
         '<div class="accent" style="background:'+accentColor(a.status)+'"></div>'+
         '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
-        '<div class="meta">Stage '+Math.min(a.current_stage_index+1, a.stages.length+1)+' of '+(a.stages.length+1)+'</div>'+
-        reasonLine+
-        '<details class="timeline"><summary>Status history</summary><ul class="hist" data-events-for="'+a.application_id+'"><li>Loading…</li></ul></details>'+
+        trackSteps(a) + pendingLine +
+        reasonLine + returnLine +
+        '<details class="timeline"><summary>Activity log</summary><ul class="hist" data-events-for="'+a.application_id+'"><li>Loading…</li></ul></details>'+
         '</div><div class="actions">'+pill(a.status)+
         (a.status==="DOCS_REQUESTED" ? '<button class="btn small" data-resubmit="'+a.application_id+'">Resubmit</button>' : '')+
         '</div></div>';
@@ -537,7 +670,7 @@
       d.addEventListener("toggle", function(){
         if(!d.open) return;
         var id = d.querySelector("[data-events-for]").dataset.eventsFor;
-        api("/api/applications/"+id+"/events").then(function(events){
+        api("/api/applications/"+id+"/activity-log").then(function(events){
           d.querySelector("ul.hist").innerHTML = events.map(function(ev){ return "<li>"+escapeHtml(ev.note||ev.action)+" — "+fmtDate(ev.occurred_at)+"</li>"; }).join("");
         });
       }, {once:true});
@@ -568,6 +701,13 @@
     document.getElementById("dept-title").textContent = (DEPT_LABEL[STATE.deptCode]||"Processing desk") + " — verification queue";
     refreshDeptQueue();
   }
+  function minutesToText(mins){
+    if(mins < 60) return mins + "m";
+    var hrs = Math.floor(mins / 60), rem = mins % 60;
+    if(hrs < 24) return hrs + "h " + rem + "m";
+    var days = Math.floor(hrs / 24);
+    return days + "d " + (hrs % 24) + "h";
+  }
   function refreshDeptQueue(){
     var q = STATE.user.role === "super_admin" ? "?dept="+encodeURIComponent(STATE.deptCode) : "";
     api("/api/department/queue"+q).then(function(res){
@@ -579,14 +719,19 @@
       var wrap = document.getElementById("dept-ledger");
       if(!res.applications.length){ wrap.innerHTML = '<div class="ledger-empty">Queue is clear.</div>'; return; }
       wrap.innerHTML = res.applications.map(function(a){
-        var actions =
-          '<button class="btn small" data-act="approve" data-id="'+a.application_id+'">Approve &amp; forward</button>'+
-          '<button class="btn ghost small" data-act="request_docs" data-id="'+a.application_id+'">Request documents</button>'+
-          '<button class="btn maroon small" data-act="reject" data-id="'+a.application_id+'">Reject</button>';
-        return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
+        var isReturned = a.status === "RETURNED_TO_DEPARTMENT";
+        var returnBanner = isReturned ? '<div class="return-banner"><strong>Returned by the Registrar</strong>'+escapeHtml(a.return_comment||"")+'</div>' : "";
+        var actions = isReturned
+          ? '<button class="btn maroon small" data-act="resubmit" data-id="'+a.application_id+'">Resubmit to Registrar</button>'
+          : '<button class="btn ghost small" data-act="preview" data-id="'+a.application_id+'">Preview &amp; edit certificate</button>'+
+            '<button class="btn small" data-act="approve" data-id="'+a.application_id+'">Approve &amp; forward</button>'+
+            '<button class="btn ghost small" data-act="request_docs" data-id="'+a.application_id+'">Request documents</button>'+
+            '<button class="btn maroon small" data-act="reject" data-id="'+a.application_id+'">Reject</button>';
+        return '<div class="ledger-row"><div class="accent" style="background:'+(isReturned?"var(--brick)":"var(--gold)")+'"></div>'+
           '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
-          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+'</div></div>'+
-          '<div class="actions">'+actions+'</div></div>';
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+' · pending '+minutesToText(a.pendingDurationMinutes)+'</div>'+
+          returnBanner +
+          '</div><div class="actions">'+actions+'</div></div>';
       }).join("");
     });
   }
@@ -595,11 +740,47 @@
     var id = b.dataset.id, action = b.dataset.act;
     if(action==="approve"){
       api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:"approve"})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
+    } else if(action==="preview"){
+      openDraftEditor(id);
+    } else if(action==="resubmit"){
+      api("/api/department/applications/"+id+"/resubmit-to-registrar", {method:"POST"}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
     } else {
       openReasonModal(action==="reject"?"Reject application":"Request additional documents", "Reason (required)", function(text){
         api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:action, reason:text})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
       });
     }
+  });
+
+  // ---------------- CERTIFICATE DRAFT EDITOR (Department) ----------------
+  var DRAFT_APP_ID = null;
+  function openDraftEditor(appId){
+    DRAFT_APP_ID = appId;
+    api("/api/applications/"+appId+"/certificate-preview").then(function(res){
+      var d = res.certificateDraft;
+      document.getElementById("draft-studentName").value = d.studentName || "";
+      document.getElementById("draft-programName").value = d.programName || "";
+      document.getElementById("draft-schoolDept").value = d.schoolDept || "";
+      document.getElementById("draft-residency").value = d.residency || "";
+      document.getElementById("draft-purposeNote").value = d.purposeNote || "";
+      document.getElementById("draft-tuitionFeeInWords").value = d.tuitionFeeInWords || "";
+      document.getElementById("draft-hostelFeeInWords").value = d.hostelFeeInWords || "";
+      document.getElementById("draft-overlay").classList.add("open");
+    }).catch(function(e){ alert(e.message); });
+  }
+  document.getElementById("draft-cancel").addEventListener("click", function(){ document.getElementById("draft-overlay").classList.remove("open"); });
+  document.getElementById("draft-save").addEventListener("click", function(){
+    var fields = {
+      studentName: document.getElementById("draft-studentName").value,
+      programName: document.getElementById("draft-programName").value,
+      schoolDept: document.getElementById("draft-schoolDept").value,
+      residency: document.getElementById("draft-residency").value,
+      purposeNote: document.getElementById("draft-purposeNote").value,
+      tuitionFeeInWords: document.getElementById("draft-tuitionFeeInWords").value,
+      hostelFeeInWords: document.getElementById("draft-hostelFeeInWords").value
+    };
+    api("/api/department/applications/"+DRAFT_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: fields})}).then(function(){
+      document.getElementById("draft-overlay").classList.remove("open");
+    }).catch(function(e){ alert(e.message); });
   });
 
   // ---------------- REGISTRAR ----------------
@@ -609,11 +790,12 @@
       var wrap = document.getElementById("registrar-ledger");
       if(!apps.length){ wrap.innerHTML = '<div class="ledger-empty">Nothing awaiting issuance.</div>'; return; }
       wrap.innerHTML = apps.map(function(a){
-        var actions = '<button class="btn small" data-act="issue" data-id="'+a.application_id+'">Generate &amp; sign</button>'+
+        var actions = '<button class="btn small" data-act="issue" data-id="'+a.application_id+'">Review &amp; issue</button>'+
+                       '<button class="btn ghost small" data-act="return" data-id="'+a.application_id+'">Return with comment</button>'+
                        '<button class="btn ghost small" data-act="rreject" data-id="'+a.application_id+'">Reject</button>';
         return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
           '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
-          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+'</div></div>'+
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+' · pending '+minutesToText(a.pendingDurationMinutes)+'</div></div>'+
           '<div class="actions">'+actions+'</div></div>';
       }).join("");
     });
@@ -625,7 +807,7 @@
       wrap.innerHTML = certs.map(function(c){
         return '<div class="ledger-row"><div class="accent" style="background:'+(c.revoked?"var(--brick)":"var(--sage)")+'"></div>'+
           '<div class="main"><div class="code">'+escapeHtml(c.application_code)+' · '+escapeHtml(c.cert_type_label)+'</div>'+
-          '<div class="meta">'+escapeHtml(c.student_name)+' — '+escapeHtml(c.certificate_number)+(c.revoked?" · revoked":"")+'</div></div>'+
+          '<div class="meta">'+escapeHtml(c.student_name)+' — '+escapeHtml(c.certificate_number)+(c.revoked?" · revoked":"")+(c.notified_at?" · student notified":"")+'</div></div>'+
           '<div class="actions">'+
             (c.revoked ? '' : '<button class="btn ghost small" data-revoke="'+c.certificate_id+'">Revoke</button>')+
           '</div></div>';
@@ -636,10 +818,11 @@
     var b = e.target.closest("button[data-act]"); if(!b) return;
     var id = b.dataset.id;
     if(b.dataset.act==="issue"){
-      api("/api/registrar/applications/"+id+"/generate-certificate", {method:"POST"}).then(function(res){
-        showCertificate(res.certificate, res.html);
-        refreshRegistrarQueue(); refreshIssuedLog();
-      }).catch(function(e2){ alert(e2.message); });
+      openIssueModal(id);
+    } else if(b.dataset.act==="return"){
+      openReasonModal("Return to Department", "Explain what needs to be corrected (required)", function(text){
+        api("/api/registrar/applications/"+id+"/return", {method:"POST", body: JSON.stringify({comment:text})}).then(refreshRegistrarQueue).catch(function(e2){alert(e2.message);});
+      });
     } else {
       openReasonModal("Reject application", "Reason (required)", function(text){
         api("/api/registrar/applications/"+id+"/reject", {method:"POST", body: JSON.stringify({reason:text})}).then(refreshRegistrarQueue).catch(function(e2){alert(e2.message);});
@@ -651,6 +834,43 @@
     openReasonModal("Revoke certificate", "Reason (required)", function(text){
       api("/api/registrar/certificates/"+b.dataset.revoke+"/revoke", {method:"POST", body: JSON.stringify({reason:text})}).then(refreshIssuedLog).catch(function(e2){alert(e2.message);});
     });
+  });
+
+  // ---------------- REVIEW & ISSUE (signature upload) ----------------
+  var ISSUE_APP_ID = null, ISSUE_SIGNATURE_B64 = null;
+  function openIssueModal(appId){
+    ISSUE_APP_ID = appId; ISSUE_SIGNATURE_B64 = null;
+    document.getElementById("issue-signature-preview").innerHTML = "";
+    document.getElementById("issue-signature-file").value = "";
+    api("/api/applications/"+appId+"/certificate-preview").then(function(res){
+      var d = res.certificateDraft;
+      document.getElementById("issue-draft-view").innerHTML =
+        '<div class="field-row"><span>Student</span><span>'+escapeHtml(d.studentName)+'</span></div>'+
+        '<div class="field-row"><span>Programme</span><span>'+escapeHtml(d.programName)+'</span></div>'+
+        '<div class="field-row"><span>School</span><span>'+escapeHtml(d.schoolDept)+'</span></div>'+
+        '<div class="field-row"><span>Tuition fee</span><span>'+escapeHtml(d.tuitionFeeInWords)+'</span></div>'+
+        '<div class="field-row"><span>Hostel fee</span><span>'+escapeHtml(d.hostelFeeInWords)+'</span></div>';
+      document.getElementById("issue-overlay").classList.add("open");
+    }).catch(function(e){ alert(e.message); });
+  }
+  document.getElementById("issue-cancel").addEventListener("click", function(){ document.getElementById("issue-overlay").classList.remove("open"); });
+  document.getElementById("issue-signature-file").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      ISSUE_SIGNATURE_B64 = reader.result;
+      document.getElementById("issue-signature-preview").innerHTML = '<img src="'+ISSUE_SIGNATURE_B64+'" style="max-height:60px;border:1px solid var(--line);padding:4px;background:#fff;">';
+    };
+    reader.readAsDataURL(file);
+  });
+  document.getElementById("issue-confirm").addEventListener("click", function(){
+    if(!ISSUE_SIGNATURE_B64){ alert("Upload a signature image first."); return; }
+    api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify({signatureImageBase64: ISSUE_SIGNATURE_B64})}).then(function(res){
+      document.getElementById("issue-overlay").classList.remove("open");
+      showCertificate(res.certificate, res.html);
+      refreshRegistrarQueue(); refreshIssuedLog();
+    }).catch(function(e2){ alert(e2.message); });
   });
   function showCertificate(cert, html){
     document.getElementById("registrar-issued-panel").style.display = "block";
@@ -706,6 +926,35 @@
     api("/api/users", {method:"POST", body: JSON.stringify(body)}).then(function(){
       document.getElementById("user-overlay").classList.remove("open");
       loadUsersScreen();
+    }).catch(function(e){ alert(e.message); });
+  });
+
+  // ---------------- BULK STUDENT IMPORT ----------------
+  document.getElementById("import-btn").addEventListener("click", function(){
+    var lines = document.getElementById("import-textarea").value.split("\n").map(function(l){return l.trim();}).filter(Boolean);
+    var fields = ["email","name","studentSdmisId","program","schoolDept","residency"];
+    var students = lines.map(function(line){
+      var parts = line.split(",").map(function(p){return p.trim();});
+      var obj = {};
+      fields.forEach(function(f, i){ if(parts[i]) obj[f] = parts[i]; });
+      return obj;
+    }).filter(function(s){ return s.email && s.email.toLowerCase() !== "email"; }); // skip a pasted header row
+    if(!students.length){ alert("Paste at least one student line first."); return; }
+    api("/api/admin/students/bulk-import", {method:"POST", body: JSON.stringify({students: students})}).then(function(res){
+      var html = '<div class="banner clear"><span class="dot"></span> '+res.created.length+' created, '+res.updated.length+' updated'+(res.errors.length ? ", "+res.errors.length+" skipped" : "")+'.</div>';
+      if(res.created.length){
+        html += '<table><tr><th>Email</th><th>Temporary password</th></tr>' +
+          res.created.map(function(c){ return '<tr><td>'+escapeHtml(c.email)+'</td><td><code>'+escapeHtml(c.tempPassword)+'</code></td></tr>'; }).join("") +
+          '</table><p class="section-sub" style="margin:8px 0 0;">Copy these now — they won\'t be shown again. Share each one only with that student.</p>';
+      }
+      if(res.errors.length){
+        html += '<table style="margin-top:10px;"><tr><th>Skipped</th><th>Reason</th></tr>' +
+          res.errors.map(function(e){ return '<tr><td>'+escapeHtml(e.email||"—")+'</td><td>'+escapeHtml(e.reason)+'</td></tr>'; }).join("") +
+          '</table>';
+      }
+      document.getElementById("import-result").innerHTML = html;
+      document.getElementById("import-textarea").value = "";
+      if(STATE.user.role === "super_admin") loadUsersScreen();
     }).catch(function(e){ alert(e.message); });
   });
 
