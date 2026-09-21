@@ -403,6 +403,7 @@
     <p class="label" style="margin-top:8px;">Tuition fee (in words)</p><input type="text" id="draft-tuitionFeeInWords">
     <p class="label" style="margin-top:8px;">Hostel fee (in words)</p><input type="text" id="draft-hostelFeeInWords">
     <div class="modal-actions">
+      <span id="draft-save-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-right:auto;">✓ Saved</span>
       <button class="btn ghost small" id="draft-cancel">Close</button>
       <button class="btn maroon small" id="draft-save">Save changes</button>
     </div>
@@ -412,8 +413,19 @@
 <div class="overlay" id="issue-overlay">
   <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto;">
     <h3>Review &amp; issue certificate</h3>
-    <div id="issue-draft-view" class="draft-view"></div>
-    <p class="label" style="margin-top:12px;">Upload Registrar's signature (PNG/JPEG)</p>
+    <p class="section-sub" style="margin-bottom:8px;">These fields print on the certificate — edit and save before signing if anything needs correcting.</p>
+    <p class="label">Student name</p><input type="text" id="issue-studentName">
+    <p class="label" style="margin-top:8px;">Programme</p><input type="text" id="issue-programName">
+    <p class="label" style="margin-top:8px;">School / Department</p><input type="text" id="issue-schoolDept">
+    <p class="label" style="margin-top:8px;">Residency</p><input type="text" id="issue-residency">
+    <p class="label" style="margin-top:8px;">Tuition fee (in words)</p><input type="text" id="issue-tuitionFeeInWords">
+    <p class="label" style="margin-top:8px;">Hostel fee (in words)</p><input type="text" id="issue-hostelFeeInWords">
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+      <button class="btn ghost small" id="issue-save-draft">Save changes</button>
+      <span id="issue-save-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;">✓ Saved</span>
+    </div>
+
+    <p class="label" style="margin-top:14px;">Upload Registrar's signature (PNG/JPEG)</p>
     <input type="file" id="issue-signature-file" accept="image/png,image/jpeg">
     <div id="issue-signature-preview" style="margin-top:8px;"></div>
     <div style="display:flex;gap:8px;margin-top:6px;">
@@ -947,7 +959,11 @@
       hostelFeeInWords: document.getElementById("draft-hostelFeeInWords").value
     };
     api("/api/department/applications/"+DRAFT_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: fields})}).then(function(){
-      document.getElementById("draft-overlay").classList.remove("open");
+      document.getElementById("draft-save-confirm").style.display = "inline";
+      setTimeout(function(){
+        document.getElementById("draft-save-confirm").style.display = "none";
+        document.getElementById("draft-overlay").classList.remove("open");
+      }, 900);
     }).catch(function(e){ alert(e.message); });
   });
 
@@ -1012,14 +1028,15 @@
     document.getElementById("issue-signature-file").value = "";
     document.getElementById("issue-seal-preview").innerHTML = "";
     document.getElementById("issue-seal-file").value = "";
+    document.getElementById("issue-save-confirm").style.display = "none";
     api("/api/applications/"+appId+"/certificate-preview").then(function(res){
       var d = res.certificateDraft;
-      document.getElementById("issue-draft-view").innerHTML =
-        '<div class="field-row"><span>Student</span><span>'+escapeHtml(d.studentName)+'</span></div>'+
-        '<div class="field-row"><span>Programme</span><span>'+escapeHtml(d.programName)+'</span></div>'+
-        '<div class="field-row"><span>School</span><span>'+escapeHtml(d.schoolDept)+'</span></div>'+
-        '<div class="field-row"><span>Tuition fee</span><span>'+escapeHtml(d.tuitionFeeInWords)+'</span></div>'+
-        '<div class="field-row"><span>Hostel fee</span><span>'+escapeHtml(d.hostelFeeInWords)+'</span></div>';
+      document.getElementById("issue-studentName").value = d.studentName || "";
+      document.getElementById("issue-programName").value = d.programName || "";
+      document.getElementById("issue-schoolDept").value = d.schoolDept || "";
+      document.getElementById("issue-residency").value = d.residency || "";
+      document.getElementById("issue-tuitionFeeInWords").value = d.tuitionFeeInWords || "";
+      document.getElementById("issue-hostelFeeInWords").value = d.hostelFeeInWords || "";
       document.getElementById("issue-overlay").classList.add("open");
     }).catch(function(e){ alert(e.message); });
   }
@@ -1044,6 +1061,23 @@
     };
     reader.readAsDataURL(file);
   });
+  function currentIssueDraftFields(){
+    return {
+      studentName: document.getElementById("issue-studentName").value,
+      programName: document.getElementById("issue-programName").value,
+      schoolDept: document.getElementById("issue-schoolDept").value,
+      residency: document.getElementById("issue-residency").value,
+      tuitionFeeInWords: document.getElementById("issue-tuitionFeeInWords").value,
+      hostelFeeInWords: document.getElementById("issue-hostelFeeInWords").value
+    };
+  }
+  document.getElementById("issue-save-draft").addEventListener("click", function(){
+    api("/api/department/applications/"+ISSUE_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: currentIssueDraftFields()})}).then(function(){
+      var c = document.getElementById("issue-save-confirm");
+      c.style.display = "inline";
+      setTimeout(function(){ c.style.display = "none"; }, 2500);
+    }).catch(function(e2){ alert(e2.message); });
+  });
   document.getElementById("issue-confirm").addEventListener("click", function(){
     if(!ISSUE_SIGNATURE_B64){ alert("Upload a signature image first."); return; }
     var body = {
@@ -1052,11 +1086,16 @@
       signaturePosition: { top: Number(document.getElementById("issue-sig-top").value)||78, left: Number(document.getElementById("issue-sig-left").value)||8 },
       sealPosition: { top: Number(document.getElementById("issue-seal-top").value)||70, left: Number(document.getElementById("issue-seal-left").value)||60 }
     };
-    api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify(body)}).then(function(res){
-      document.getElementById("issue-overlay").classList.remove("open");
-      showCertificate(res.certificate, res.html);
-      refreshRegistrarQueue(); refreshIssuedLog();
-    }).catch(function(e2){ alert(e2.message); });
+    // Auto-save any edited draft fields first, so a forgotten "Save changes" click never loses an edit.
+    api("/api/department/applications/"+ISSUE_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: currentIssueDraftFields()})})
+      .then(function(){
+        return api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify(body)});
+      })
+      .then(function(res){
+        document.getElementById("issue-overlay").classList.remove("open");
+        showCertificate(res.certificate, res.html);
+        refreshRegistrarQueue(); refreshIssuedLog();
+      }).catch(function(e2){ alert(e2.message); });
   });
   function showCertificate(cert, html){
     document.getElementById("registrar-issued-panel").style.display = "block";

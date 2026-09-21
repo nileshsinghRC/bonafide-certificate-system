@@ -449,8 +449,9 @@ app.get("/api/applications/:id/certificate-preview", requireAuth, async (req, re
 
 // Req. 3: department inline editing of the pre-populated draft.
 app.patch("/api/department/applications/:id/certificate-draft", requireAuth, async (req, res) => {
-  if (DEPARTMENT_ROLES.indexOf(req.auth.role) === -1 && req.auth.role !== "super_admin") {
-    return err(res, 403, "FORBIDDEN", "Only department reviewers can edit the certificate draft.");
+  const canEdit = DEPARTMENT_ROLES.indexOf(req.auth.role) !== -1 || req.auth.role === "registrar_admin" || req.auth.role === "super_admin";
+  if (!canEdit) {
+    return err(res, 403, "FORBIDDEN", "Only department reviewers or the Registrar can edit the certificate draft.");
   }
   const { fields } = req.body || {};
   if (!fields || typeof fields !== "object") return err(res, 422, "MISSING_FIELDS", "Provide a fields object to merge into the draft.");
