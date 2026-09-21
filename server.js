@@ -5,14 +5,18 @@ const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const multer = require("multer");
+const XLSX = require("xlsx");
 
 const { pool } = require("./src/db");
 const { signToken, requireAuth, requireRole } = require("./src/auth");
 const { renderCertificateHtml } = require("./src/certificateTemplates");
 
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "8mb" })); // signature/seal/logo images travel as base64 in JSON bodies
 
 // Department roles own one stage each of the forwarding sequence.
 // registrar_admin always owns the implicit final stage.
@@ -46,6 +50,22 @@ function generateTempPassword() {
   return crypto.randomBytes(9).toString("base64url").slice(0, 10);
 }
 
+// Matches a student's programme string against each school's programme
+// list (case-insensitive) so a bulk-imported or SDMIS-synced account is
+// automatically tagged with the right school — this is the validation step
+// that makes a School Admin's queue actually scoped to their own school's
+// students rather than the whole university.
+async function matchSchoolForProgramme(client, programme) {
+  if (!programme) return null;
+  const { rows } = await client.query("SELECT school_id, programmes FROM schools WHERE is_active = true");
+  const needle = String(programme).trim().toLowerCase();
+  for (const s of rows) {
+    const list = (s.programmes || []).map((p) => String(p).trim().toLowerCase());
+    if (list.indexOf(needle) !== -1) return s.school_id;
+  }
+  return null;
+}
+
 // Shared by both the SDMIS sync API and the Super Admin bulk-import screen.
 // Creates new student accounts with a generated temporary password (forced
 // change on first login) and updates profile fields on accounts that already
@@ -61,23 +81,26 @@ async function bulkUpsertStudents(client, students) {
     if (!isValidEmailFormat(email)) { errors.push({ email, reason: "Not a valid email address" }); continue; }
     if (!studentEmailAllowed(email)) { errors.push({ email, reason: "Email domain is not allowed for student accounts" }); continue; }
 
+    const schoolId = await matchSchoolForProgramme(client, raw.program);
+    const schoolWarning = raw.program && !schoolId ? " (no school matched this programme — assign manually in Users & Roles)" : "";
+
     const existing = await client.query("SELECT user_id FROM users WHERE lower(username) = $1", [email]);
     if (existing.rows[0]) {
       await client.query(
-        `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5
-         WHERE user_id = $6`,
-        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, existing.rows[0].user_id]
+        `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5, school_id = $6
+         WHERE user_id = $7`,
+        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, existing.rows[0].user_id]
       );
-      updated.push(email);
+      updated.push(email + schoolWarning);
     } else {
       const tempPassword = generateTempPassword();
       const hash = await bcrypt.hash(tempPassword, 10);
       await client.query(
-        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, must_change_password)
-         VALUES ($1,$2,$3,'student',$4,$5,$6,$7,true)`,
-        [email, hash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null]
+        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id, must_change_password)
+         VALUES ($1,$2,$3,'student',$4,$5,$6,$7,$8,true)`,
+        [email, hash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId]
       );
-      created.push({ email, tempPassword });
+      created.push({ email, tempPassword, school: schoolWarning ? null : schoolId });
     }
   }
   return { created, updated, errors };
@@ -302,12 +325,12 @@ app.post("/api/applications", requireAuth, requireRole("student", "super_admin")
 
     const insertRes = await client.query(
       `INSERT INTO applications
-        (application_code, student_user_id, student_name, student_sdmis_id, program, school_dept, residency,
+        (application_code, student_user_id, student_name, student_sdmis_id, program, school_dept, school_id, residency,
          cert_type_id, stages, current_stage_index, purpose_note, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,'IN_PROGRESS')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,'IN_PROGRESS')
        RETURNING *`,
       [code, student.user_id, student.name, student.student_sdmis_id || student.username, student.program,
-       student.school_dept, student.residency, certType.cert_type_id, JSON.stringify(stages), purposeNote || null]
+       student.school_dept, student.school_id, student.residency, certType.cert_type_id, JSON.stringify(stages), purposeNote || null]
     );
     const application = insertRes.rows[0];
 
@@ -481,23 +504,35 @@ app.post("/api/applications/:id/resubmit", requireAuth, requireRole("student", "
 // ============================================================
 app.get("/api/department/queue", requireAuth, async (req, res) => {
   let dept = null;
+  let schoolFilter = null; // only applies to the SCHOOL stage — each School Admin sees only their own school's applications
   if (DEPARTMENT_ROLES.indexOf(req.auth.role) !== -1) {
     dept = Object.keys(STAGE_TO_ROLE).find((k) => STAGE_TO_ROLE[k] === req.auth.role);
+    if (dept === "SCHOOL") {
+      const ur = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [req.auth.userId]);
+      schoolFilter = ur.rows[0] ? ur.rows[0].school_id : null;
+    }
   } else if (req.auth.role === "super_admin") {
     dept = req.query.dept;
     if (!dept) return err(res, 400, "MISSING_DEPT", "Pass ?dept=SCHOOL|EXAM|FEES_FINAID|ADMISSION|WARDEN for Super Admin.");
+    if (dept === "SCHOOL" && req.query.schoolId) schoolFilter = req.query.schoolId;
   } else {
     return err(res, 403, "FORBIDDEN", "Your role does not have a department queue.");
   }
 
+  const params = [dept];
+  let schoolClause = "";
+  if (dept === "SCHOOL" && schoolFilter) {
+    params.push(schoolFilter);
+    schoolClause = " AND a.school_id = $2";
+  }
   const { rows } = await pool.query(
     `SELECT a.*, ct.code AS cert_type_code, ct.label AS cert_type_label
      FROM applications a JOIN certificate_types ct ON ct.cert_type_id = a.cert_type_id
      WHERE a.status IN ('IN_PROGRESS', 'RETURNED_TO_DEPARTMENT')
        AND a.current_stage_index < jsonb_array_length(a.stages)
-       AND a.stages->>a.current_stage_index::int = $1
+       AND a.stages->>a.current_stage_index::int = $1` + schoolClause + `
      ORDER BY a.created_at ASC`,
-    [dept]
+    params
   );
   const withDuration = rows.map((r) => Object.assign({}, r, {
     pendingDurationMinutes: Math.max(0, Math.round((Date.now() - new Date(r.level_entered_at).getTime()) / 60000))
@@ -684,7 +719,7 @@ app.post("/api/registrar/applications/:id/return", requireAuth, requireRole("reg
 // step — generates the number/token, composites the signature, applies the
 // (edited) draft, and queues the notification.
 app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
-  const { signatureImageBase64 } = req.body || {};
+  const { signatureImageBase64, sealImageBase64, signaturePosition, sealPosition } = req.body || {};
   if (!signatureImageBase64) return err(res, 422, "SIGNATURE_REQUIRED", "A signature image is required to issue the certificate.");
   const client = await pool.connect();
   try {
@@ -709,9 +744,13 @@ app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requir
     const certRes = await client.query(
       `INSERT INTO certificates
         (application_id, certificate_number, cert_type_id, qr_verification_token, issued_by_user_id,
-         registrar_signature_data, signed_at, notified_at, notification_channel)
-       VALUES ($1,$2,$3,$4,$5,$6,now(),now(),'EMAIL') RETURNING *`,
-      [application.application_id, certNumber, application.cert_type_id, qrToken, req.auth.userId, signatureImageBase64]
+         registrar_signature_data, registrar_seal_data, signature_position, seal_position,
+         signed_at, notified_at, notification_channel)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now(),'EMAIL') RETURNING *`,
+      [application.application_id, certNumber, application.cert_type_id, qrToken, req.auth.userId, signatureImageBase64,
+       sealImageBase64 || null,
+       JSON.stringify(signaturePosition || { top: 78, left: 8 }),
+       JSON.stringify(sealPosition || { top: 70, left: 60 })]
     );
     const cert = certRes.rows[0];
 
@@ -790,6 +829,16 @@ app.get("/api/registrar/certificates/:id/render", requireAuth, requireRole("regi
 });
 
 // ============================================================
+// PUBLIC BRANDING — logo + theme, safe to show before login
+// ============================================================
+app.get("/api/public/branding", async (req, res) => {
+  const { rows } = await pool.query("SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN ('app_logo_data','theme')");
+  const out = {};
+  rows.forEach((r) => { out[r.setting_key] = r.setting_value; });
+  res.json(out);
+});
+
+// ============================================================
 // PUBLIC VERIFICATION — no auth
 // ============================================================
 app.get("/api/certificates/verify", async (req, res) => {
@@ -833,13 +882,13 @@ app.get("/api/users", requireAuth, requireRole("super_admin"), async (req, res) 
 });
 
 app.post("/api/users", requireAuth, requireRole("super_admin"), async (req, res) => {
-  const { username, password, name, roleCode } = req.body || {};
+  const { username, password, name, roleCode, schoolId } = req.body || {};
   if (!username || !password || !name || !roleCode) return err(res, 400, "MISSING_FIELDS", "username, password, name, and roleCode are required.");
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
-      "INSERT INTO users (username, password_hash, name, role_code) VALUES ($1,$2,$3,$4) RETURNING user_id, username, name, role_code, active",
-      [username, hash, name, roleCode]
+      "INSERT INTO users (username, password_hash, name, role_code, school_id) VALUES ($1,$2,$3,$4,$5) RETURNING user_id, username, name, role_code, active, school_id",
+      [username, hash, name, roleCode, schoolId || null]
     );
     res.status(201).json(rows[0]);
   } catch (e) {
@@ -908,6 +957,219 @@ app.post("/api/integrations/students/sync", requireApiKey, async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// Excel version of the bulk-import screen — same validation/tagging as the
+// JSON route, just parses an uploaded .xlsx first. Expected header row:
+// email, name, studentSdmisId, program, schoolDept, residency (any order,
+// case-insensitive; unrecognized columns are ignored).
+app.post("/api/admin/students/bulk-import-excel", requireAuth, requireRole("super_admin"), upload.single("file"), async (req, res) => {
+  if (!req.file) return err(res, 400, "MISSING_FILE", "Attach an .xlsx file under the 'file' field.");
+  let rows;
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  } catch (e) {
+    return err(res, 422, "UNREADABLE_FILE", "Could not read that file as an Excel spreadsheet.");
+  }
+  const keyMap = { email: "email", name: "name", studentsdmisid: "studentSdmisId", studentid: "studentSdmisId",
+    program: "program", schooldept: "schoolDept", school: "schoolDept", residency: "residency" };
+  const students = rows.map((row) => {
+    const out = {};
+    Object.keys(row).forEach((k) => {
+      const mapped = keyMap[k.trim().toLowerCase().replace(/[\s_]/g, "")];
+      if (mapped) out[mapped] = String(row[k]).trim();
+    });
+    return out;
+  }).filter((s) => s.email);
+  if (!students.length) return err(res, 422, "NO_ROWS", "No rows with an email column were found in that file.");
+
+  const client = await pool.connect();
+  try {
+    const result = await bulkUpsertStudents(client, students);
+    res.json(result);
+  } catch (e) {
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Bulk import failed.");
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================================
+// SCHOOLS & PROGRAMMES
+// ============================================================
+app.get("/api/schools", requireAuth, async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM schools WHERE is_active = true ORDER BY name");
+  res.json(rows);
+});
+
+app.post("/api/schools", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { code, name, programmes } = req.body || {};
+  if (!code || !name) return err(res, 400, "MISSING_FIELDS", "code and name are required.");
+  try {
+    const { rows } = await pool.query(
+      "INSERT INTO schools (code, name, programmes) VALUES ($1,$2,$3) RETURNING *",
+      [code, name, JSON.stringify(Array.isArray(programmes) ? programmes : [])]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    if (e.code === "23505") return err(res, 409, "CODE_TAKEN", "A school with that code already exists.");
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Could not create the school.");
+  }
+});
+
+app.patch("/api/schools/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { name, programmes, isActive } = req.body || {};
+  const sets = [], vals = [];
+  if (name !== undefined) { vals.push(name); sets.push("name = $" + vals.length); }
+  if (programmes !== undefined) { vals.push(JSON.stringify(programmes)); sets.push("programmes = $" + vals.length); }
+  if (isActive !== undefined) { vals.push(isActive); sets.push("is_active = $" + vals.length); }
+  if (!sets.length) return err(res, 400, "NO_FIELDS", "Nothing to update.");
+  vals.push(req.params.id);
+  const { rows } = await pool.query(`UPDATE schools SET ${sets.join(", ")} WHERE school_id = $${vals.length} RETURNING *`, vals);
+  if (!rows[0]) return err(res, 404, "SCHOOL_NOT_FOUND", "No school exists with the given ID.");
+  res.json(rows[0]);
+});
+
+// ============================================================
+// APP SETTINGS — logo, letterhead override, theme (Super Admin writes, everyone reads)
+// ============================================================
+const PUBLIC_SETTING_KEYS = ["app_logo_data", "letterhead_header_data", "letterhead_footer_data", "theme"];
+
+app.get("/api/settings", requireAuth, async (req, res) => {
+  const { rows } = await pool.query("SELECT setting_key, setting_value FROM app_settings WHERE setting_key = ANY($1)", [PUBLIC_SETTING_KEYS]);
+  const out = {};
+  rows.forEach((r) => { out[r.setting_key] = r.setting_value; });
+  res.json(out);
+});
+
+app.put("/api/settings/:key", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const key = req.params.key;
+  if (PUBLIC_SETTING_KEYS.indexOf(key) === -1) return err(res, 400, "UNKNOWN_SETTING", "Not a recognized setting key.");
+  const { value } = req.body || {};
+  await pool.query(
+    `INSERT INTO app_settings (setting_key, setting_value, updated_by, updated_at) VALUES ($1,$2,$3,now())
+     ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [key, value == null ? null : String(value), req.auth.userId]
+  );
+  res.json({ ok: true });
+});
+
+// ============================================================
+// CONSOLIDATED APPLICATION RECORDS — School (own school) & Registrar (all)
+// ============================================================
+async function fetchConsolidatedApplications(schoolId) {
+  const params = [];
+  let clause = "";
+  if (schoolId) { params.push(schoolId); clause = "WHERE a.school_id = $1"; }
+  const { rows } = await pool.query(
+    `SELECT a.application_code, a.student_name, a.student_sdmis_id, a.program, a.school_dept, a.status,
+            a.current_stage_index, a.stages, a.created_at, a.updated_at,
+            ct.label AS cert_type_label, c.certificate_number, c.issued_at
+     FROM applications a
+     JOIN certificate_types ct ON ct.cert_type_id = a.cert_type_id
+     LEFT JOIN certificates c ON c.application_id = a.application_id
+     ${clause}
+     ORDER BY a.created_at DESC`,
+    params
+  );
+  return rows.map((r) => Object.assign({}, r, { currentLevel: currentLevelOf(r) }));
+}
+
+app.get("/api/department/applications/all", requireAuth, async (req, res) => {
+  if (DEPARTMENT_ROLES.indexOf(req.auth.role) === -1 && req.auth.role !== "super_admin") {
+    return err(res, 403, "FORBIDDEN", "Only department reviewers can view the consolidated list.");
+  }
+  let schoolId = null;
+  if (req.auth.role === "school_admin") {
+    const ur = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [req.auth.userId]);
+    schoolId = ur.rows[0] ? ur.rows[0].school_id : null;
+  } else if (req.query.schoolId) {
+    schoolId = req.query.schoolId;
+  }
+  res.json(await fetchConsolidatedApplications(schoolId));
+});
+
+app.get("/api/registrar/applications/all", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
+  res.json(await fetchConsolidatedApplications(req.query.schoolId || null));
+});
+
+function rowsToWorkbookBuffer(rows) {
+  const flat = rows.map((r) => ({
+    "Application": r.application_code,
+    "Student": r.student_name,
+    "SDMIS ID": r.student_sdmis_id,
+    "Programme": r.program,
+    "School": r.school_dept,
+    "Certificate Type": r.cert_type_label,
+    "Status": r.status,
+    "Current Level": r.currentLevel,
+    "Certificate No.": r.certificate_number || "",
+    "Submitted": r.created_at ? new Date(r.created_at).toISOString() : "",
+    "Last Updated": r.updated_at ? new Date(r.updated_at).toISOString() : ""
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(flat);
+  XLSX.utils.book_append_sheet(wb, ws, "Applications");
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+}
+
+app.get("/api/department/applications/export.xlsx", requireAuth, async (req, res) => {
+  if (DEPARTMENT_ROLES.indexOf(req.auth.role) === -1 && req.auth.role !== "super_admin") {
+    return err(res, 403, "FORBIDDEN", "Only department reviewers can export this list.");
+  }
+  let schoolId = null;
+  if (req.auth.role === "school_admin") {
+    const ur = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [req.auth.userId]);
+    schoolId = ur.rows[0] ? ur.rows[0].school_id : null;
+  } else if (req.query.schoolId) {
+    schoolId = req.query.schoolId;
+  }
+  const rows = await fetchConsolidatedApplications(schoolId);
+  const buf = rowsToWorkbookBuffer(rows);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=applications.xlsx");
+  res.send(buf);
+});
+
+app.get("/api/registrar/applications/export.xlsx", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
+  const rows = await fetchConsolidatedApplications(req.query.schoolId || null);
+  const buf = rowsToWorkbookBuffer(rows);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", "attachment; filename=applications.xlsx");
+  res.send(buf);
+});
+
+// ============================================================
+// STUDENT CERTIFICATE DOWNLOAD (the piece missing from the student dashboard)
+// ============================================================
+app.get("/api/applications/:id/certificate", requireAuth, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT c.*, a.*, ct.code AS cert_type_code, ct.label AS cert_type_label
+     FROM certificates c
+     JOIN applications a ON a.application_id = c.application_id
+     JOIN certificate_types ct ON ct.cert_type_id = a.cert_type_id
+     WHERE a.application_id = $1`,
+    [req.params.id]
+  );
+  const row = rows[0];
+  if (!row) return err(res, 404, "CERTIFICATE_NOT_FOUND", "This application has no issued certificate yet.");
+  if (req.auth.role === "student" && row.student_user_id !== req.auth.userId) {
+    return err(res, 403, "FORBIDDEN", "You can only download your own certificates.");
+  }
+  const html = renderCertificateHtml(row, row);
+  res.json({
+    html,
+    certificateNumber: row.certificate_number,
+    qrToken: row.qr_verification_token,
+    registrarSignatureData: row.registrar_signature_data,
+    registrarSealData: row.registrar_seal_data,
+    signaturePosition: row.signature_position,
+    sealPosition: row.seal_position
+  });
 });
 
 // ============================================================

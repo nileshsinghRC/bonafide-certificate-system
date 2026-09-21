@@ -20,6 +20,15 @@ CREATE TABLE IF NOT EXISTS roles (
     label       VARCHAR(80) NOT NULL
 );
 
+-- ---------------- SCHOOLS & PROGRAMMES ----------------
+CREATE TABLE IF NOT EXISTS schools (
+    school_id    SMALLSERIAL PRIMARY KEY,
+    code         VARCHAR(40) NOT NULL UNIQUE,
+    name         VARCHAR(150) NOT NULL,
+    programmes   JSONB NOT NULL DEFAULT '[]'::jsonb,  -- programme names taught by this school
+    is_active    BOOLEAN NOT NULL DEFAULT TRUE
+);
+
 -- ---------------- USERS ----------------
 CREATE TABLE IF NOT EXISTS users (
     user_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -30,6 +39,7 @@ CREATE TABLE IF NOT EXISTS users (
     student_sdmis_id VARCHAR(30),          -- populated only for role_code = 'student'
     program       VARCHAR(150),
     school_dept   VARCHAR(100),
+    school_id     SMALLINT REFERENCES schools(school_id), -- School Admin: which school they manage; Student: which school their programme belongs to
     residency     VARCHAR(20),             -- DAY_SCHOLAR / HOSTELLER, student only
     active        BOOLEAN NOT NULL DEFAULT TRUE,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- forced on accounts created by bulk import / SDMIS sync
@@ -41,6 +51,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role_code);
+CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);
 
 -- ---------------- CERTIFICATE TYPES ----------------
 -- "stages" is the ordered list of department codes an application must clear
@@ -74,6 +85,7 @@ CREATE TABLE IF NOT EXISTS applications (
     student_sdmis_id       VARCHAR(30) NOT NULL,
     program                 VARCHAR(150),
     school_dept             VARCHAR(100),
+    school_id                SMALLINT REFERENCES schools(school_id),
     residency               VARCHAR(20),
     cert_type_id            SMALLINT NOT NULL REFERENCES certificate_types(cert_type_id),
     stages                  JSONB NOT NULL,          -- resolved stage list for this application, e.g. ["SCHOOL","WARDEN"]
@@ -103,6 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 CREATE INDEX IF NOT EXISTS idx_applications_cert_type ON applications(cert_type_id);
 CREATE INDEX IF NOT EXISTS idx_applications_created_at ON applications(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_applications_assigned_reviewer ON applications(assigned_reviewer_id);
+CREATE INDEX IF NOT EXISTS idx_applications_school ON applications(school_id);
 
 -- ---------------- ACTIVITY LOGS (cross-stakeholder, immutable) ----------------
 -- Read directly by every dashboard (Student, Department, Registrar, Super
@@ -145,6 +158,9 @@ CREATE TABLE IF NOT EXISTS certificates (
 
     -- Registrar signature upload — composited onto the PDF at issuance time
     registrar_signature_data   TEXT,          -- base64 data: URL of the uploaded signature image
+    registrar_seal_data          TEXT,          -- base64 data: URL of the uploaded official seal image
+    signature_position             JSONB,         -- {top, left} percentages for customized placement
+    seal_position                    JSONB,
     signed_at                    TIMESTAMPTZ,
 
     -- Automated notification
@@ -157,6 +173,14 @@ CREATE TABLE IF NOT EXISTS certificates (
 );
 CREATE INDEX IF NOT EXISTS idx_certs_qr_token ON certificates(qr_verification_token);
 CREATE INDEX IF NOT EXISTS idx_certs_number ON certificates(certificate_number);
+
+-- ---------------- APP SETTINGS (logo, letterhead override, theme) ----------------
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key    VARCHAR(60) PRIMARY KEY,
+    setting_value  TEXT,
+    updated_by     UUID REFERENCES users(user_id),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- ---------------- updated_at trigger ----------------
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$

@@ -25,11 +25,35 @@ function refDate(cert) {
 function heading(text) {
   return '<h2 class="cert-heading">' + esc(text) + '</h2>';
 }
-function signatureBlock() {
+function signatureBlock(cert) {
+  var sigStyle = "";
+  var sealStyle = "";
+  if (cert && cert.signature_position) {
+    var sp = cert.signature_position;
+    sigStyle = ' style="position:absolute;top:' + (sp.top || 78) + '%;left:' + (sp.left || 8) + '%;max-width:150px;max-height:60px;"';
+  }
+  if (cert && cert.seal_position) {
+    var kp = cert.seal_position;
+    sealStyle = ' style="position:absolute;top:' + (kp.top || 70) + '%;left:' + (kp.left || 60) + '%;max-width:110px;max-height:110px;"';
+  }
+  var sigImg = (cert && cert.registrar_signature_data)
+    ? '<img src="' + esc(cert.registrar_signature_data) + '"' + sigStyle + ' alt="Registrar signature">'
+    : f('(E-Signature)');
+  var sealImg = (cert && cert.registrar_seal_data)
+    ? '<img src="' + esc(cert.registrar_seal_data) + '"' + sealStyle + ' alt="Official seal">'
+    : f('(E-Stamp)');
   return (
-    '<p class="sig-marks">' + f('(E-Signature)') + '&nbsp;&nbsp;&nbsp;' + f('(E-Stamp)') + '</p>' +
+    '<div class="sig-marks" style="position:relative;min-height:70px;">' + sigImg + '&nbsp;&nbsp;&nbsp;' + sealImg + '</div>' +
     '<p class="sig-name">Sanjay Bhatnagar</p>' +
     '<p class="sig-title">Registrar</p>'
+  );
+}
+function verificationFooter(cert) {
+  var token = cert && cert.qr_verification_token ? cert.qr_verification_token : "";
+  return (
+    '<p class="verify-footer">This certificate is issued digitally and does not require a physical signature. ' +
+    'To verify its authenticity, scan the QR code above or visit the verification portal and enter reference ' +
+    '<strong>' + esc(cert && cert.certificate_number) + '</strong> (verification token <code>' + esc(token) + '</code>).</p>'
   );
 }
 function typeFooter(label) {
@@ -50,7 +74,7 @@ const RENDERERS = {
       '<p>The University has no objection to ' + f('Mr./Ms.') + ' ' + f(app.student_name) +
       ' getting admission to any other University/Institution.</p>' +
       '<p>His/her ABC/NAD/APAAR ID is ' + f('(ID No.)') + '.</p>' +
-      signatureBlock() + typeFooter('Migration — General')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Migration — General')
     );
   },
   MIGRATION_EARLY_EXIT: function (app, cert) {
@@ -67,7 +91,7 @@ const RENDERERS = {
       '<p>(He/She) has opted early exit from the programme. The University has no objection to ' +
       f('Mr./Ms.') + ' ' + f(app.student_name) + ' getting admission to any other University/Institution.</p>' +
       '<p>His/her ABC/NAD/APAAR ID is ' + f('(ID No.)') + '.</p>' +
-      signatureBlock() + typeFooter('Migration — Early Exit')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Migration — Early Exit')
     );
   },
   MEDIUM_OF_INSTRUCTION: function (app, cert) {
@@ -82,7 +106,7 @@ const RENDERERS = {
       '<p>This certificate serves to confirm that the medium of instruction at Anant National University is English.</p>' +
       '<p>This certificate is issued upon ' + f(app.student_name) +
       '\u2019s request, in support of his/her application for admission to a higher study programme.</p>' +
-      signatureBlock() + typeFooter('Medium of Instruction')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Medium of Instruction')
     );
   },
   VISA_GENERAL: function (app, cert) {
@@ -103,7 +127,7 @@ const RENDERERS = {
       ' and participating in the ' + f('(Programme/Event Name)') + ' during the period ' + f('(Date range)') + '.</p>' +
       '<p>This certificate is issued on his/her request for the purpose of a visa application for travelling to ' +
       f('(Country)') + ' during the period ' + f('(Date range)') + '.</p>' +
-      signatureBlock() + typeFooter('VISA & Passport — General')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('VISA & Passport — General')
     );
   },
   BANK_LOAN_FIN_AID: function (app, cert) {
@@ -120,7 +144,7 @@ const RENDERERS = {
       f('(as per university records)') + '<br>IFSC Code: ' + f('(as per university records)') +
       '<br>Bank: Axis Bank<br>Branch: Bopal, Ahmedabad \u00b7 Branch code: 878</p>' +
       '<p>The certificate is issued on receipt of an express request from the student and is valid for the purpose of an education loan from the bank only.</p>' +
-      signatureBlock() + typeFooter('Bank Loan — General, with Financial Aid')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Bank Loan — General, with Financial Aid')
     );
   },
   BANK_LOAN_GENERAL: function (app, cert) {
@@ -136,7 +160,7 @@ const RENDERERS = {
       f('(as per university records)') + '<br>IFSC Code: ' + f('(as per university records)') +
       '<br>Bank: Axis Bank<br>Branch: Bopal, Ahmedabad \u00b7 Branch code: 878</p>' +
       '<p>The letter is issued on receipt of an express request from the student and is valid for the purpose of an education loan from the bank only.</p>' +
-      signatureBlock() + typeFooter('Bank Loan — General')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Bank Loan — General')
     );
   },
   BANK_LOAN_ADEPT: function (app, cert) {
@@ -149,7 +173,7 @@ const RENDERERS = {
       ' programme for the batch ' + f('(____________)') + '.</p>' +
       '<p>Below are the marks scored by the student in ADEPT \u2014 a university-level entrance test for the Design Programme (score sheet provided separately by the Admission Office):</p>' +
       '<p>This certificate is issued on request from the student and is valid for the purpose of an education loan only.</p>' +
-      signatureBlock() + typeFooter('Bank Loan — ADEPT Score')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Bank Loan — ADEPT Score')
     );
   },
   FIELD_RESEARCH: function (app, cert) {
@@ -162,7 +186,7 @@ const RENDERERS = {
       ' programme for the batch ' + f('(____________)') + '.</p>' +
       '<p>It is certified that, as per university policy for her/his field research, she/he will engage respectfully with local community members through interviews and visual ethnography. We kindly request your support and cooperation to enable her/him to carry out this academic research. All ethical protocols, including informed consent and confidentiality, will be strictly observed.</p>' +
       '<p>This certificate is issued at his/her request to support field research.</p>' +
-      signatureBlock() + typeFooter('Field Research')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Field Research')
     );
   },
   GOVT_SCHOLARSHIP_GENERAL: function (app, cert) {
@@ -180,7 +204,7 @@ const RENDERERS = {
         ? ', who has been residing in the hostel since ' + f('(Month/Year)')
         : ', a day scholar of the university,') +
       ' for the purpose of applying for a scholarship.</p>' +
-      signatureBlock() + typeFooter('Government Scholarship — General')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('Government Scholarship — General')
     );
   },
   MYSY_SCHOLARSHIP: function (app, cert) {
@@ -195,7 +219,7 @@ const RENDERERS = {
       '<p>He/She has not received any other scholarship assistance under any other scheme. No disciplinary action is pending in accordance with the policy, rules & standards of the university. If he/she receives assistance from any other scheme, or in case of cancellation/transfer to another institution, he/she will inform KCG by letter to KCG, Ahmedabad, and by e-mail to ' +
       f('mysy-kcg@gujgov.edu.in') + ' with a copy to ' + f('ro@anu.edu.in') + '.</p>' +
       '<p><i>Signed undertaking from the student is on file with this application.</i></p>' +
-      signatureBlock() + typeFooter('MYSY Scholarship')
+      signatureBlock(cert) + verificationFooter(cert) + typeFooter('MYSY Scholarship')
     );
   }
 };

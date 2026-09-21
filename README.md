@@ -141,6 +141,100 @@ Six capabilities added on top of the v1 forwarding workflow (§"How the workflow
 
 6. **Activity logs + change password** — `application_events` is now `activity_logs`, with `from_stage`/`to_stage` columns so the same feed reads correctly on every dashboard (`GET /api/applications/:id/activity-log`, scoped so students only see their own). `POST /api/me/password` already existed for the forced first-login change; it's now also reachable any time via the "Change password" link in the header.
 
+## v3 — schools & programmes, exports, seal placement, branding, security
+
+**Schools & programmes (validated routing).** Super Admin → Users & Roles →
+"Schools & programmes" creates a school with a programme list
+(`schools.programmes`). Every School Admin account is tagged with exactly
+one school (`users.school_id`); every student account is auto-tagged by
+matching their `program` string against every active school's programme
+list (`matchSchoolForProgramme()` in `server.js`) — this runs on both the
+CSV and Excel bulk-import paths and the SDMIS sync API, so however a student
+record arrives, it's validated against the real programme list, not just
+trusted blindly. A School Admin's queue and "All applications" view are both
+scoped to `school_id`, not just the `SCHOOL` stage — two School Admins never
+see each other's students. Unmatched programmes are still imported (so
+nothing blocks on a bad or missing programme name) but flagged in the
+import result for manual assignment.
+
+**Bulk import via Excel.** Users & Roles → "…or upload an Excel file"
+(`POST /api/admin/students/bulk-import-excel`, multipart, header row any
+order — `email, name, studentSdmisId, program, schoolDept, residency`).
+Shares the same validation and school-matching as the CSV path.
+
+**Consolidated records + export.** A School Admin's "All applications" tab
+shows every application for their school regardless of stage (not just
+their own queue); a Registrar's shows every application university-wide,
+optionally filtered by `?schoolId=`. Both export to a real `.xlsx`
+(`GET .../export.xlsx`, via the `xlsx` package) and to PDF via the browser's
+print dialog — the export button just calls `window.print()` against the
+same table.
+
+**Registrar seal, alongside the signature, with customizable placement.**
+`POST /registrar/applications/:id/upload-signature` now also accepts
+`sealImageBase64`, `signaturePosition`, and `sealPosition` (`{top, left}` as
+percentages of the certificate body). Both images are composited as
+absolutely-positioned `<img>` tags at issuance time — reposition per
+certificate from the "Review & issue" modal, no code change needed for a
+one-off placement adjustment.
+
+**Certificate print — single A4 page, letterhead margins only.** The
+two-page/misaligned-content bug was the *entire dashboard* printing
+alongside the certificate, not a sizing problem with the certificate itself.
+Fixed with a standard print-isolation technique: `@media print` now sets
+`@page { size: A4; margin: 0; }` and hides everything in `body` except the
+element carrying `.print-target`, so only the certificate (or, on the "All
+applications" screen, only the table) ever reaches the page. The letterhead
+images already carry the university's own margins, which is why page margin
+is `0` — adding browser margin on top of the letterhead's built-in margin
+was the other half of the original layout bug.
+
+**Public verification.** The QR code now encodes a full URL
+(`<origin>/?verify=<token>`), not a bare token — scanning it opens the
+portal directly to a pre-filled, already-submitted verification result, no
+typing required. The same `?verify=` query param works for a logged-in user
+too (routes to the in-app Verify screen) and works from any device with no
+account.
+
+**Student certificate download.** `GET /applications/:id/certificate`
+(student-owned only, checked server-side) was the missing piece behind the
+"no download button" bug — the student dashboard now shows a **Download**
+button on every issued application, opening the same letterhead-styled
+viewer the Registrar sees, with its own print/save-as-PDF action.
+
+**Branding & theme.** Super Admin → Users & Roles → "Branding & theme":
+upload a logo (replaces the small circular mark in the header and login
+screen everywhere in the app, stored as `app_settings.app_logo_data`) and
+pick from four built-in colour themes (`academic`, `navy`, `forest`,
+`slate` — CSS custom-property swaps, see `THEMES` in `public/index.html`).
+Both are global settings, readable pre-login via
+`GET /api/public/branding` (unauthenticated — logos and theme choice aren't
+sensitive) and read/write via `GET/PUT /api/settings` for the authenticated
+in-app views. Note: this reskins the *application UI*; it does not currently
+regenerate the certificate letterhead images themselves (`public/assets/`) —
+swapping those is a file replacement, not a database setting, since they're
+served as static files.
+
+**SDMIS connection — security posture.** The system is architected so that
+**the original SDMIS database is never written to under any configuration**:
+`POST /api/integrations/students/sync` is one-directional — SDMIS (or a
+deployment script standing in for it) *pushes* student records to us via a
+static `X-API-Key`; this codebase contains no code path that opens an
+outbound connection to SDMIS or any external database, so there is nothing
+here that could write back to the source of truth even by accident. When you
+do wire this to the real SDMIS:
+- If SDMIS exposes a pull API instead, have your integration script call it
+  and forward the result to `/api/integrations/students/sync` — keep this
+  system on the receiving end.
+- If direct database access is the only option, use a **read-only DB
+  role/replica** on the SDMIS side for whatever process feeds this endpoint;
+  never give this application's `DATABASE_URL` credentials (which is a
+  separate, dedicated Postgres database on Neon) any access to SDMIS's
+  database.
+- Rotate `INTEGRATION_API_KEY` the same way as `JWT_SECRET` if it's ever
+  exposed, and keep it out of any client-side code — it's a server-to-server
+  secret only.
+
 ## Deploying — GitHub + Neon + Render
 
 1. **Push to GitHub**
@@ -201,6 +295,17 @@ confirms before submitting.
 
 ## Known gaps to close before production
 
+- **Certificate draft "editor"** is a structured field form (student name,
+  programme, fees, etc.), not a rich-text/Word-style editor — it edits the
+  same data the template renders from, but department staff can't freely
+  restyle or add arbitrary text the way a Word document would allow. If a
+  true WYSIWYG document editor is needed, that's a materially different
+  (and bigger) piece of work than extending this form.
+- **Letterhead images** (`public/assets/letterhead-header.jpg` /
+  `-footer.jpg`, used on the actual printed certificate) are still static
+  files, not a Super-Admin-uploadable setting — only the in-app UI logo and
+  theme are dynamic. Swapping the letterhead itself still means replacing
+  those two files and redeploying.
 - **File uploads** are currently simulated (a filename string, no real
   storage). Wire `documents.storage_url` to Cloudinary, matching the
   `/api/v1/upload` pattern already used elsewhere in the ERP.

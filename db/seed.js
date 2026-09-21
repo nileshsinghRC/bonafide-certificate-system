@@ -29,11 +29,19 @@ const CERT_TYPES = [
   { code: "MYSY_SCHOLARSHIP", label: "MYSY Scholarship Certificate", stages: ["SCHOOL", "FEES_FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: true }
 ];
 
+// Schools & the programmes each one teaches — used to validate/tag new
+// student and School Admin accounts against a real programme list.
+const SCHOOLS = [
+  { code: "SOT", name: "School of Technology", programmes: ["B.Tech Computer Science", "B.Des Product Design", "B.Des Product Design (Hons)"] },
+  { code: "SOA", name: "School of Environment and Architecture", programmes: ["B.Arch"] },
+  { code: "SOB", name: "School of Business", programmes: ["BBA"] }
+];
+
 // Demo accounts — one per role, matching the escalation table stakeholders.
 const USERS = [
   { username: "aarav.mehta", password: "student123", name: "Aarav Mehta", role_code: "student",
-    student_sdmis_id: "SDM-2023-00451", program: "B.Des Product Design", school_dept: "School of Technology", residency: "HOSTELLER" },
-  { username: "priya.desai", password: "admin123", name: "Priya Desai", role_code: "school_admin" },
+    student_sdmis_id: "SDM-2023-00451", program: "B.Des Product Design", school_dept: "School of Technology", school_code: "SOT", residency: "HOSTELLER" },
+  { username: "priya.desai", password: "admin123", name: "Priya Desai", role_code: "school_admin", school_code: "SOT" },
   { username: "karan.bose", password: "admin123", name: "Karan Bose", role_code: "exam_admin" },
   { username: "meera.iyer", password: "admin123", name: "Meera Iyer", role_code: "fees_finaid_admin" },
   { username: "arjun.rao", password: "admin123", name: "Arjun Rao", role_code: "admission_admin" },
@@ -65,18 +73,30 @@ async function main() {
       );
     }
 
+    const schoolIdByCode = {};
+    for (const s of SCHOOLS) {
+      const r = await client.query(
+        `INSERT INTO schools (code, name, programmes) VALUES ($1,$2,$3)
+         ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, programmes = EXCLUDED.programmes
+         RETURNING school_id`,
+        [s.code, s.name, JSON.stringify(s.programmes)]
+      );
+      schoolIdByCode[s.code] = r.rows[0].school_id;
+    }
+
     for (const u of USERS) {
       const hash = await bcrypt.hash(u.password, 10);
+      const schoolId = u.school_code ? schoolIdByCode[u.school_code] : null;
       await client.query(
-        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role_code = EXCLUDED.role_code`,
-        [u.username, hash, u.name, u.role_code, u.student_sdmis_id || null, u.program || null, u.school_dept || null, u.residency || null]
+        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role_code = EXCLUDED.role_code, school_id = EXCLUDED.school_id`,
+        [u.username, hash, u.name, u.role_code, u.student_sdmis_id || null, u.program || null, u.school_dept || null, u.residency || null, schoolId]
       );
     }
 
     await client.query("COMMIT");
-    console.log("Seed complete:", ROLES.length, "roles,", CERT_TYPES.length, "certificate types,", USERS.length, "demo users.");
+    console.log("Seed complete:", ROLES.length, "roles,", CERT_TYPES.length, "certificate types,", SCHOOLS.length, "schools,", USERS.length, "demo users.");
     console.log("Demo logins (username / password):");
     USERS.forEach((u) => console.log("  " + u.username + " / " + u.password + "  (" + u.role_code + ")"));
   } catch (e) {

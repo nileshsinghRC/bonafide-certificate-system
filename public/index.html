@@ -106,12 +106,15 @@
   .import-result code{background:var(--gold-soft);color:var(--ink);padding:1px 5px;border-radius:3px;}
   .cert-wrap{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0;margin-top:16px;overflow:hidden;}
   .cert-wrap img.letterhead-band{display:block;width:100%;height:auto;}
-  .cert-body{padding:10px 34px 26px;color:#111;font-size:14px;line-height:1.7;}
-  .cert-body h2.cert-heading{font-family:var(--font-display);text-align:center;font-size:20px;text-decoration:underline;margin:10px 0 18px;}
+  .cert-body{padding:10px 34px 26px;color:#111;font-size:13px;line-height:1.55;}
+  .cert-body h2.cert-heading{font-family:var(--font-display);text-align:center;font-size:19px;text-decoration:underline;margin:8px 0 14px;}
   .cert-body mark{background:#FFF176;padding:0 2px;font-weight:600;}
-  .cert-body .sig-marks{margin-top:36px;} .cert-body .sig-name{font-weight:700;margin:14px 0 0;}
+  .cert-body .sig-marks{margin-top:30px;} .cert-body .sig-name{font-weight:700;margin:14px 0 0;}
   .cert-body .sig-title{font-weight:700;margin:0;}
-  .cert-body .cert-type-footer{color:var(--slate);font-style:italic;font-size:12px;margin-top:22px;}
+  .cert-body .cert-type-footer{color:var(--slate);font-style:italic;font-size:11px;margin-top:14px;}
+  .cert-body .verify-footer{color:var(--slate);font-size:10.5px;line-height:1.5;margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;}
+  .cert-body .verify-footer code{background:var(--slate-bg);padding:0 4px;border-radius:3px;}
+  .cert-body p{margin:0 0 10px;}
   #qr-canvas{margin-top:10px;}
   .empty-state{text-align:center;padding:40px 20px;color:var(--slate);}
   footer.note{max-width:1080px;margin:0 auto;padding:0 24px 40px;font-size:12px;color:var(--slate);}
@@ -129,7 +132,19 @@
   .return-banner{background:var(--brick-bg);color:var(--brick);border-radius:4px;padding:9px 12px;font-size:12.5px;margin-top:6px;}
   .return-banner strong{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;}
   .draft-view .field-row span:last-child{max-width:60%;}
-  @media print{header.shell,nav.roles,.no-print,footer.note{display:none !important;} body{background:#fff;} main{padding:0;max-width:none;} .panel{border:none;padding:0;}}
+  .reg-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .reg-table th{text-align:left;padding:8px 10px;background:var(--slate-bg);color:var(--slate);font-size:11px;text-transform:uppercase;letter-spacing:0.03em;border-bottom:1px solid var(--line);}
+  .reg-table td{padding:8px 10px;border-bottom:1px solid var(--line);}
+  .reg-table tr:hover td{background:var(--parchment);}
+  @media print{
+    @page{ size: A4; margin: 0; }
+    html, body{ height: auto !important; }
+    body *{ visibility: hidden; }
+    .print-target, .print-target *{ visibility: visible; }
+    .print-target{ position: absolute; top: 0; left: 0; width: 100%; margin: 0; border: none; box-shadow: none; }
+    .cert-wrap{ border: none; }
+    .no-print{ display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -232,6 +247,18 @@
     <div class="panel"><div class="ledger" id="dept-ledger"></div></div>
   </section>
 
+  <section class="screen" id="screen-all-apps">
+    <h2 class="section-title" id="allapps-title">All applications</h2>
+    <p class="section-sub" id="allapps-sub">Every application and its current status, exportable for records.</p>
+    <div class="no-print" style="display:flex;gap:8px;margin-bottom:14px;">
+      <button class="btn ghost small" id="allapps-export-pdf">Export PDF</button>
+      <button class="btn ghost small" id="allapps-export-xlsx">Export Excel</button>
+    </div>
+    <div class="panel print-target">
+      <table class="reg-table" id="allapps-table"><thead></thead><tbody></tbody></table>
+    </div>
+  </section>
+
   <section class="screen" id="screen-registrar">
     <h2 class="section-title">Office of the Registrar</h2>
     <p class="section-sub">Final review, signing, and issuance on the university letterhead.</p>
@@ -268,12 +295,36 @@
       </div>
       <div class="ledger" id="users-ledger"></div>
     </div>
+
     <div class="panel">
-      <p class="label">Bulk import students</p>
-      <p class="section-sub" style="margin-bottom:8px;">One student per line: <code>email,name,studentSdmisId,program,schoolDept,residency</code>. New accounts get a temporary password shown below — share it securely; they'll be forced to set their own on first login. Existing accounts (matched by email) just get their profile fields refreshed.</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <p class="label" style="margin:0;">Schools &amp; programmes</p>
+        <button class="btn small" id="add-school-btn">Add school</button>
+      </div>
+      <p class="section-sub" style="margin-bottom:8px;">Each School Admin is tagged with one school below; student accounts are auto-tagged by matching their programme against these lists.</p>
+      <div class="ledger" id="schools-ledger"></div>
+    </div>
+
+    <div class="panel">
+      <p class="label">Bulk import students — paste CSV</p>
+      <p class="section-sub" style="margin-bottom:8px;">One student per line: <code>email,name,studentSdmisId,program,schoolDept,residency</code>. New accounts get a temporary password shown below — share it securely; they'll be forced to set their own on first login. Existing accounts (matched by email) just get their profile fields refreshed, and their school is re-validated against the programme lists above.</p>
       <textarea class="import-textarea" id="import-textarea" placeholder="aarav.mehta@anu.edu.in,Aarav Mehta,SDM-2023-00451,B.Des Product Design,School of Technology,HOSTELLER"></textarea>
       <button class="btn small" id="import-btn" style="margin-top:8px;">Import</button>
+      <p class="label" style="margin-top:16px;">…or upload an Excel file</p>
+      <p class="section-sub" style="margin-bottom:8px;">Header row: <code>email, name, studentSdmisId, program, schoolDept, residency</code> (any order).</p>
+      <input type="file" id="import-excel-file" accept=".xlsx,.xls">
       <div class="import-result" id="import-result"></div>
+    </div>
+
+    <div class="panel">
+      <p class="label">Branding &amp; theme</p>
+      <p class="section-sub" style="margin-bottom:8px;">Replace the university logo shown in the header, and choose a colour theme for the whole portal.</p>
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
+        <img id="settings-logo-preview" class="avatar" style="width:44px;height:44px;" src="" alt="">
+        <input type="file" id="settings-logo-file" accept="image/png,image/jpeg,image/svg+xml">
+      </div>
+      <p class="label">Theme</p>
+      <div id="theme-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"></div>
     </div>
   </section>
 
@@ -299,10 +350,28 @@
     <p class="label">Full name</p><input type="text" id="new-user-name">
     <p class="label" style="margin-top:10px;">Username</p><input type="text" id="new-user-username">
     <p class="label" style="margin-top:10px;">Role</p><select id="new-user-role"></select>
+    <div id="new-user-school-field" style="display:none;">
+      <p class="label" style="margin-top:10px;">School they manage</p>
+      <select id="new-user-school"></select>
+    </div>
     <p class="label" style="margin-top:10px;">Temporary password</p><input type="text" id="new-user-password" value="changeme123">
     <div class="modal-actions">
       <button class="btn ghost small" id="user-cancel">Cancel</button>
       <button class="btn maroon small" id="user-confirm">Create user</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="school-overlay">
+  <div class="modal">
+    <h3>Add school</h3>
+    <p class="label">School code</p><input type="text" id="new-school-code" placeholder="e.g. SOD">
+    <p class="label" style="margin-top:10px;">School name</p><input type="text" id="new-school-name" placeholder="e.g. School of Design">
+    <p class="label" style="margin-top:10px;">Programmes (comma-separated)</p>
+    <textarea id="new-school-programmes" placeholder="B.Des Communication Design, B.Des Interior Design"></textarea>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="school-cancel">Cancel</button>
+      <button class="btn maroon small" id="school-confirm">Create school</button>
     </div>
   </div>
 </div>
@@ -341,15 +410,39 @@
 </div>
 
 <div class="overlay" id="issue-overlay">
-  <div class="modal" style="max-width:480px;">
+  <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto;">
     <h3>Review &amp; issue certificate</h3>
     <div id="issue-draft-view" class="draft-view"></div>
     <p class="label" style="margin-top:12px;">Upload Registrar's signature (PNG/JPEG)</p>
     <input type="file" id="issue-signature-file" accept="image/png,image/jpeg">
     <div id="issue-signature-preview" style="margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <div style="flex:1;"><p class="label">Position — top %</p><input type="text" id="issue-sig-top" value="78"></div>
+      <div style="flex:1;"><p class="label">Position — left %</p><input type="text" id="issue-sig-left" value="8"></div>
+    </div>
+
+    <p class="label" style="margin-top:14px;">Upload official seal (optional, PNG/JPEG)</p>
+    <input type="file" id="issue-seal-file" accept="image/png,image/jpeg">
+    <div id="issue-seal-preview" style="margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:6px;">
+      <div style="flex:1;"><p class="label">Position — top %</p><input type="text" id="issue-seal-top" value="70"></div>
+      <div style="flex:1;"><p class="label">Position — left %</p><input type="text" id="issue-seal-left" value="60"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn ghost small" id="issue-cancel">Close</button>
       <button class="btn maroon small" id="issue-confirm">Sign &amp; issue</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="cert-viewer-overlay">
+  <div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto;">
+    <h3>Your certificate</h3>
+    <div id="cert-viewer-slot"></div>
+    <div class="modal-actions no-print">
+      <button class="btn ghost small" id="cert-viewer-close">Close</button>
+      <button class="btn maroon small" onclick="window.print()">Print / save as PDF</button>
     </div>
   </div>
 </div>
@@ -505,13 +598,13 @@
   // ---------------- NAV ----------------
   var ROLE_NAV = {
     student: [{screen:"student", label:"My applications"}],
-    school_admin: [{screen:"department", label:"Processing desk"}],
+    school_admin: [{screen:"department", label:"Processing desk"},{screen:"all-apps", label:"All applications"}],
     exam_admin: [{screen:"department", label:"Processing desk"}],
     fees_finaid_admin: [{screen:"department", label:"Processing desk"}],
     admission_admin: [{screen:"department", label:"Processing desk"}],
     warden: [{screen:"department", label:"Processing desk"}],
-    registrar_admin: [{screen:"registrar", label:"Registrar"}],
-    super_admin: [{screen:"student", label:"Student"},{screen:"department", label:"Processing desk"},{screen:"registrar", label:"Registrar"},{screen:"users", label:"Users & roles"}]
+    registrar_admin: [{screen:"registrar", label:"Registrar"},{screen:"all-apps", label:"All applications"}],
+    super_admin: [{screen:"student", label:"Student"},{screen:"department", label:"Processing desk"},{screen:"registrar", label:"Registrar"},{screen:"all-apps", label:"All applications"},{screen:"users", label:"Users & roles"}]
   };
   function buildNav(){
     var nav = document.getElementById("role-nav");
@@ -533,6 +626,7 @@
     if(name==="department") loadDepartmentScreen();
     if(name==="registrar") loadRegistrarScreen();
     if(name==="users") loadUsersScreen();
+    if(name==="all-apps") loadAllAppsScreen();
   }
   document.getElementById("role-nav").addEventListener("click", function(e){
     var b = e.target.closest("button[data-screen]"); if(!b) return;
@@ -542,6 +636,7 @@
   function enterApp(){
     document.getElementById("login-screen").style.display = "none";
     document.getElementById("app-shell").style.display = "block";
+    loadBrandingSettings();
     if(STATE.user.mustChangePassword){
       openPasswordChangeModal(true);
       return;
@@ -664,6 +759,7 @@
         '<details class="timeline"><summary>Activity log</summary><ul class="hist" data-events-for="'+a.application_id+'"><li>Loading…</li></ul></details>'+
         '</div><div class="actions">'+pill(a.status)+
         (a.status==="DOCS_REQUESTED" ? '<button class="btn small" data-resubmit="'+a.application_id+'">Resubmit</button>' : '')+
+        (a.status==="ISSUED" ? '<button class="btn small" data-download="'+a.application_id+'">Download</button>' : '')+
         '</div></div>';
     }).join("");
     wrap.querySelectorAll("details.timeline").forEach(function(d){
@@ -681,7 +777,35 @@
           .then(refreshStudentApplications).catch(function(e){ alert(e.message); });
       });
     });
+    wrap.querySelectorAll("[data-download]").forEach(function(btn){
+      btn.addEventListener("click", function(){
+        api("/api/applications/"+btn.dataset.download+"/certificate").then(function(res){
+          openCertificateViewer(res);
+        }).catch(function(e){ alert(e.message); });
+      });
+    });
   }
+
+  // ---------------- CERTIFICATE VIEWER (student download + reprint) ----------------
+  function openCertificateViewer(res){
+    document.getElementById("cert-viewer-slot").innerHTML =
+      '<div class="cert-wrap print-target">'+
+        '<img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">'+
+        '<div class="cert-body">'+res.html+'<div id="cert-viewer-qr"></div></div>'+
+        '<img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">'+
+      '</div>';
+    document.getElementById("cert-viewer-overlay").classList.add("open");
+    setTimeout(function(){
+      var qrEl = document.querySelector(".print-target #cert-viewer-qr");
+      if(qrEl){
+        try{ new QRCode(qrEl, {text: window.location.origin + "/?verify=" + res.qrToken, width:84, height:84, colorDark:"#1C2333", colorLight:"#FFFFFF"}); }
+        catch(e){ qrEl.textContent = "[QR: "+res.qrToken+"]"; }
+      }
+    }, 0);
+  }
+  document.getElementById("cert-viewer-close").addEventListener("click", function(){
+    document.getElementById("cert-viewer-overlay").classList.remove("open");
+  });
 
   // ---------------- DEPARTMENT DESK ----------------
   function loadDepartmentScreen(){
@@ -749,6 +873,50 @@
         api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:action, reason:text})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
       });
     }
+  });
+
+  // ---------------- ALL APPLICATIONS (School register + Registrar consolidated) ----------------
+  function loadAllAppsScreen(){
+    var isRegistrar = STATE.user.role === "registrar_admin" || (STATE.user.role === "super_admin");
+    var endpoint = (STATE.user.role === "registrar_admin") ? "/api/registrar/applications/all" : "/api/department/applications/all";
+    if(STATE.user.role === "super_admin"){
+      // Super Admin sees the registrar-wide view by default (all schools)
+      endpoint = "/api/registrar/applications/all";
+    }
+    document.getElementById("allapps-title").textContent = (STATE.user.role === "school_admin") ? "All applications — your school" : "All applications — university-wide";
+    api(endpoint).then(function(rows){
+      STATE.allApps = rows;
+      var thead = document.querySelector("#allapps-table thead");
+      var tbody = document.querySelector("#allapps-table tbody");
+      var cols = ["Application","Student","Programme","School","Certificate Type","Status","Current Level","Certificate No.","Submitted"];
+      thead.innerHTML = "<tr>" + cols.map(function(c){ return "<th>"+c+"</th>"; }).join("") + "</tr>";
+      if(!rows.length){ tbody.innerHTML = '<tr><td colspan="'+cols.length+'" style="padding:20px;color:var(--slate);text-align:center;">No applications yet.</td></tr>'; return; }
+      tbody.innerHTML = rows.map(function(r){
+        return "<tr>" +
+          "<td>"+escapeHtml(r.application_code)+"</td>"+
+          "<td>"+escapeHtml(r.student_name)+"</td>"+
+          "<td>"+escapeHtml(r.program||"")+"</td>"+
+          "<td>"+escapeHtml(r.school_dept||"")+"</td>"+
+          "<td>"+escapeHtml(r.cert_type_label)+"</td>"+
+          "<td>"+pill(r.status)+"</td>"+
+          "<td>"+escapeHtml(levelLabel(r.currentLevel))+"</td>"+
+          "<td>"+escapeHtml(r.certificate_number||"—")+"</td>"+
+          "<td>"+fmtDate(r.created_at)+"</td>"+
+        "</tr>";
+      }).join("");
+    });
+  }
+  document.getElementById("allapps-export-pdf").addEventListener("click", function(){ window.print(); });
+  document.getElementById("allapps-export-xlsx").addEventListener("click", function(){
+    var endpoint = (STATE.user.role === "school_admin") ? "/api/department/applications/export.xlsx" : "/api/registrar/applications/export.xlsx";
+    var token = localStorage.getItem(TOKEN_KEY);
+    fetch(endpoint, { headers: { Authorization: "Bearer " + token } }).then(function(r){ return r.blob(); }).then(function(blob){
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "applications.xlsx";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
   });
 
   // ---------------- CERTIFICATE DRAFT EDITOR (Department) ----------------
@@ -836,12 +1004,14 @@
     });
   });
 
-  // ---------------- REVIEW & ISSUE (signature upload) ----------------
-  var ISSUE_APP_ID = null, ISSUE_SIGNATURE_B64 = null;
+  // ---------------- REVIEW & ISSUE (signature + seal upload) ----------------
+  var ISSUE_APP_ID = null, ISSUE_SIGNATURE_B64 = null, ISSUE_SEAL_B64 = null;
   function openIssueModal(appId){
-    ISSUE_APP_ID = appId; ISSUE_SIGNATURE_B64 = null;
+    ISSUE_APP_ID = appId; ISSUE_SIGNATURE_B64 = null; ISSUE_SEAL_B64 = null;
     document.getElementById("issue-signature-preview").innerHTML = "";
     document.getElementById("issue-signature-file").value = "";
+    document.getElementById("issue-seal-preview").innerHTML = "";
+    document.getElementById("issue-seal-file").value = "";
     api("/api/applications/"+appId+"/certificate-preview").then(function(res){
       var d = res.certificateDraft;
       document.getElementById("issue-draft-view").innerHTML =
@@ -864,9 +1034,25 @@
     };
     reader.readAsDataURL(file);
   });
+  document.getElementById("issue-seal-file").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      ISSUE_SEAL_B64 = reader.result;
+      document.getElementById("issue-seal-preview").innerHTML = '<img src="'+ISSUE_SEAL_B64+'" style="max-height:70px;border:1px solid var(--line);padding:4px;background:#fff;">';
+    };
+    reader.readAsDataURL(file);
+  });
   document.getElementById("issue-confirm").addEventListener("click", function(){
     if(!ISSUE_SIGNATURE_B64){ alert("Upload a signature image first."); return; }
-    api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify({signatureImageBase64: ISSUE_SIGNATURE_B64})}).then(function(res){
+    var body = {
+      signatureImageBase64: ISSUE_SIGNATURE_B64,
+      sealImageBase64: ISSUE_SEAL_B64,
+      signaturePosition: { top: Number(document.getElementById("issue-sig-top").value)||78, left: Number(document.getElementById("issue-sig-left").value)||8 },
+      sealPosition: { top: Number(document.getElementById("issue-seal-top").value)||70, left: Number(document.getElementById("issue-seal-left").value)||60 }
+    };
+    api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify(body)}).then(function(res){
       document.getElementById("issue-overlay").classList.remove("open");
       showCertificate(res.certificate, res.html);
       refreshRegistrarQueue(); refreshIssuedLog();
@@ -875,13 +1061,13 @@
   function showCertificate(cert, html){
     document.getElementById("registrar-issued-panel").style.display = "block";
     document.getElementById("certificate-slot").innerHTML =
-      '<div class="cert-wrap">'+
+      '<div class="cert-wrap print-target">'+
         '<img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">'+
         '<div class="cert-body">'+html+'<div id="qr-canvas"></div></div>'+
         '<img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">'+
       '</div>';
     document.getElementById("qr-canvas").innerHTML = "";
-    try{ new QRCode(document.getElementById("qr-canvas"), {text: cert.qr_verification_token, width:84, height:84, colorDark:"#1C2333", colorLight:"#FFFFFF"}); }
+    try{ new QRCode(document.getElementById("qr-canvas"), {text: window.location.origin + "/?verify=" + cert.qr_verification_token, width:84, height:84, colorDark:"#1C2333", colorLight:"#FFFFFF"}); }
     catch(e){ document.getElementById("qr-canvas").textContent = "[QR: "+cert.qr_verification_token+"]"; }
   }
   document.getElementById("close-cert").addEventListener("click", function(){ document.getElementById("registrar-issued-panel").style.display="none"; });
@@ -893,6 +1079,8 @@
       ROLES_CACHE = res[0];
       renderUsers(res[1]);
     });
+    loadSchoolsPanel();
+    loadBrandingSettings();
   }
   function renderUsers(users){
     document.getElementById("users-ledger").innerHTML = users.map(function(u){
@@ -916,12 +1104,24 @@
     document.getElementById("new-user-name").value=""; document.getElementById("new-user-username").value="";
     document.getElementById("new-user-password").value="changeme123";
     document.getElementById("new-user-role").innerHTML = ROLES_CACHE.map(function(r){ return '<option value="'+r.role_code+'">'+r.label+'</option>'; }).join("");
+    toggleSchoolField();
     document.getElementById("user-overlay").classList.add("open");
   });
+  function toggleSchoolField(){
+    var isSchoolAdmin = document.getElementById("new-user-role").value === "school_admin";
+    document.getElementById("new-user-school-field").style.display = isSchoolAdmin ? "block" : "none";
+    if(isSchoolAdmin){
+      api("/api/schools").then(function(schools){
+        document.getElementById("new-user-school").innerHTML = schools.map(function(s){ return '<option value="'+s.school_id+'">'+escapeHtml(s.name)+'</option>'; }).join("");
+      });
+    }
+  }
+  document.getElementById("new-user-role").addEventListener("change", toggleSchoolField);
   document.getElementById("user-cancel").addEventListener("click", function(){ document.getElementById("user-overlay").classList.remove("open"); });
   document.getElementById("user-confirm").addEventListener("click", function(){
     var body = { name: document.getElementById("new-user-name").value.trim(), username: document.getElementById("new-user-username").value.trim(),
       password: document.getElementById("new-user-password").value.trim() || "changeme123", roleCode: document.getElementById("new-user-role").value };
+    if(body.roleCode === "school_admin") body.schoolId = document.getElementById("new-user-school").value;
     if(!body.name || !body.username){ alert("Name and username are required."); return; }
     api("/api/users", {method:"POST", body: JSON.stringify(body)}).then(function(){
       document.getElementById("user-overlay").classList.remove("open");
@@ -929,7 +1129,52 @@
     }).catch(function(e){ alert(e.message); });
   });
 
-  // ---------------- BULK STUDENT IMPORT ----------------
+  // ---------------- SCHOOLS & PROGRAMMES ----------------
+  function loadSchoolsPanel(){
+    api("/api/schools").then(function(schools){
+      var wrap = document.getElementById("schools-ledger");
+      if(!schools.length){ wrap.innerHTML = '<div class="ledger-empty">No schools yet.</div>'; return; }
+      wrap.innerHTML = schools.map(function(s){
+        return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
+          '<div class="main"><div class="code">'+escapeHtml(s.name)+' ('+escapeHtml(s.code)+')</div>'+
+          '<div class="meta">'+(s.programmes||[]).map(escapeHtml).join(", ")+'</div></div></div>';
+      }).join("");
+    });
+  }
+  document.getElementById("add-school-btn").addEventListener("click", function(){
+    document.getElementById("new-school-code").value = "";
+    document.getElementById("new-school-name").value = "";
+    document.getElementById("new-school-programmes").value = "";
+    document.getElementById("school-overlay").classList.add("open");
+  });
+  document.getElementById("school-cancel").addEventListener("click", function(){ document.getElementById("school-overlay").classList.remove("open"); });
+  document.getElementById("school-confirm").addEventListener("click", function(){
+    var code = document.getElementById("new-school-code").value.trim();
+    var name = document.getElementById("new-school-name").value.trim();
+    var programmes = document.getElementById("new-school-programmes").value.split(",").map(function(p){return p.trim();}).filter(Boolean);
+    if(!code || !name){ alert("Code and name are required."); return; }
+    api("/api/schools", {method:"POST", body: JSON.stringify({code:code, name:name, programmes:programmes})}).then(function(){
+      document.getElementById("school-overlay").classList.remove("open");
+      loadSchoolsPanel();
+    }).catch(function(e){ alert(e.message); });
+  });
+
+  // ---------------- BULK STUDENT IMPORT (CSV + Excel share this renderer) ----------------
+  function renderImportResult(res){
+    var html = '<div class="banner clear"><span class="dot"></span> '+res.created.length+' created, '+res.updated.length+' updated'+(res.errors.length ? ", "+res.errors.length+" skipped" : "")+'.</div>';
+    if(res.created.length){
+      html += '<table><tr><th>Email</th><th>Temporary password</th></tr>' +
+        res.created.map(function(c){ return '<tr><td>'+escapeHtml(c.email)+'</td><td><code>'+escapeHtml(c.tempPassword)+'</code></td></tr>'; }).join("") +
+        '</table><p class="section-sub" style="margin:8px 0 0;">Copy these now — they won\'t be shown again. Share each one only with that student.</p>';
+    }
+    if(res.errors.length){
+      html += '<table style="margin-top:10px;"><tr><th>Skipped</th><th>Reason</th></tr>' +
+        res.errors.map(function(e){ return '<tr><td>'+escapeHtml(e.email||"—")+'</td><td>'+escapeHtml(e.reason)+'</td></tr>'; }).join("") +
+        '</table>';
+    }
+    document.getElementById("import-result").innerHTML = html;
+    if(STATE.user.role === "super_admin") loadUsersScreen();
+  }
   document.getElementById("import-btn").addEventListener("click", function(){
     var lines = document.getElementById("import-textarea").value.split("\n").map(function(l){return l.trim();}).filter(Boolean);
     var fields = ["email","name","studentSdmisId","program","schoolDept","residency"];
@@ -941,22 +1186,74 @@
     }).filter(function(s){ return s.email && s.email.toLowerCase() !== "email"; }); // skip a pasted header row
     if(!students.length){ alert("Paste at least one student line first."); return; }
     api("/api/admin/students/bulk-import", {method:"POST", body: JSON.stringify({students: students})}).then(function(res){
-      var html = '<div class="banner clear"><span class="dot"></span> '+res.created.length+' created, '+res.updated.length+' updated'+(res.errors.length ? ", "+res.errors.length+" skipped" : "")+'.</div>';
-      if(res.created.length){
-        html += '<table><tr><th>Email</th><th>Temporary password</th></tr>' +
-          res.created.map(function(c){ return '<tr><td>'+escapeHtml(c.email)+'</td><td><code>'+escapeHtml(c.tempPassword)+'</code></td></tr>'; }).join("") +
-          '</table><p class="section-sub" style="margin:8px 0 0;">Copy these now — they won\'t be shown again. Share each one only with that student.</p>';
-      }
-      if(res.errors.length){
-        html += '<table style="margin-top:10px;"><tr><th>Skipped</th><th>Reason</th></tr>' +
-          res.errors.map(function(e){ return '<tr><td>'+escapeHtml(e.email||"—")+'</td><td>'+escapeHtml(e.reason)+'</td></tr>'; }).join("") +
-          '</table>';
-      }
-      document.getElementById("import-result").innerHTML = html;
+      renderImportResult(res);
       document.getElementById("import-textarea").value = "";
-      if(STATE.user.role === "super_admin") loadUsersScreen();
     }).catch(function(e){ alert(e.message); });
   });
+  document.getElementById("import-excel-file").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var formData = new FormData();
+    formData.append("file", file);
+    var token = localStorage.getItem(TOKEN_KEY);
+    fetch("/api/admin/students/bulk-import-excel", { method: "POST", headers: { Authorization: "Bearer " + token }, body: formData })
+      .then(function(r){ return r.json().then(function(body){ if(!r.ok) throw (body && body.error) || {message:"Import failed"}; return body; }); })
+      .then(function(res){ renderImportResult(res); e.target.value = ""; })
+      .catch(function(err2){ alert(err2.message); });
+  });
+
+  // ---------------- BRANDING & THEME ----------------
+  var THEMES = {
+    academic: {"--ink":"#1C2333","--maroon":"#7A2E2E","--maroon-deep":"#5C2222","--gold":"#A9823F"},
+    navy: {"--ink":"#0F1E3D","--maroon":"#1F4E8C","--maroon-deep":"#163A69","--gold":"#3E7CB1"},
+    forest: {"--ink":"#1B2E22","--maroon":"#2F6B4F","--maroon-deep":"#234F3A","--gold":"#7A9D54"},
+    slate: {"--ink":"#20242B","--maroon":"#495366","--maroon-deep":"#343C4C","--gold":"#8A93A6"}
+  };
+  function applyTheme(name){
+    var t = THEMES[name] || THEMES.academic;
+    Object.keys(t).forEach(function(k){ document.documentElement.style.setProperty(k, t[k]); });
+  }
+  function renderThemePicker(current){
+    document.getElementById("theme-picker").innerHTML = Object.keys(THEMES).map(function(name){
+      var c = THEMES[name];
+      var sel = name === current ? "2px solid var(--focus)" : "1px solid var(--line)";
+      return '<button type="button" class="theme-swatch" data-theme="'+name+'" style="width:60px;height:34px;border-radius:4px;cursor:pointer;border:'+sel+';background:'+c["--maroon"]+';color:#fff;font-size:10px;text-transform:capitalize;">'+name+'</button>';
+    }).join("");
+  }
+  document.getElementById("theme-picker").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-theme]"); if(!b) return;
+    applyTheme(b.dataset.theme);
+    renderThemePicker(b.dataset.theme);
+    api("/api/settings/theme", {method:"PUT", body: JSON.stringify({value: b.dataset.theme})}).catch(function(e2){ alert(e2.message); });
+  });
+  document.getElementById("settings-logo-file").addEventListener("change", function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var dataUrl = reader.result;
+      document.getElementById("settings-logo-preview").src = dataUrl;
+      applyLogo(dataUrl);
+      api("/api/settings/app_logo_data", {method:"PUT", body: JSON.stringify({value: dataUrl})}).catch(function(e2){ alert(e2.message); });
+    };
+    reader.readAsDataURL(file);
+  });
+  function applyLogo(dataUrl){
+    if(!dataUrl) return;
+    document.querySelectorAll(".seal").forEach(function(el){
+      el.innerHTML = "";
+      el.style.backgroundImage = "url('"+dataUrl+"')";
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center";
+    });
+  }
+  function loadBrandingSettings(){
+    api("/api/settings").then(function(s){
+      if(s.theme){ applyTheme(s.theme); }
+      renderThemePicker(s.theme || "academic");
+      if(s.app_logo_data){ document.getElementById("settings-logo-preview").src = s.app_logo_data; applyLogo(s.app_logo_data); }
+    }).catch(function(){});
+  }
 
   // ---------------- MODAL ----------------
   var overlay = document.getElementById("reason-overlay");
@@ -976,11 +1273,30 @@
   });
 
   // ---------------- INIT ----------------
+  fetch("/api/public/branding").then(function(r){ return r.json(); }).then(function(s){
+    if(s.theme) applyTheme(s.theme);
+    if(s.app_logo_data) applyLogo(s.app_logo_data);
+  }).catch(function(){});
+
+  var verifyParam = new URLSearchParams(window.location.search).get("verify");
+
   var token = localStorage.getItem(TOKEN_KEY);
   if(token){
-    api("/api/me").then(function(user){ STATE.user = user; enterApp(); }).catch(function(){ localStorage.removeItem(TOKEN_KEY); showLoginScreen(); });
+    api("/api/me").then(function(user){
+      STATE.user = user; enterApp();
+      if(verifyParam){
+        showScreen("verify");
+        document.getElementById("verify-input").value = verifyParam;
+        document.getElementById("verify-btn").click();
+      }
+    }).catch(function(){ localStorage.removeItem(TOKEN_KEY); showLoginScreen(); });
   } else {
     showLoginScreen();
+    if(verifyParam){
+      document.querySelector('.login-tab[data-tab="verify"]').click();
+      document.getElementById("verify-input-pub").value = verifyParam;
+      document.getElementById("verify-btn-pub").click();
+    }
   }
 })();
 </script>
