@@ -1,6 +1,7 @@
 // db/seed.js
 // Run with: npm run seed  (after schema.sql has been applied)
 require("dotenv").config();
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { pool } = require("../src/db");
 
@@ -29,18 +30,36 @@ const CERT_TYPES = [
   { code: "MYSY_SCHOLARSHIP", label: "MYSY Scholarship Certificate", stages: ["SCHOOL", "FEES_FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: true }
 ];
 
-// Schools & the programmes each one teaches — used to validate/tag new
-// student and School Admin accounts against a real programme list.
+// Canonical, university-wide programme list — schools and students are both
+// validated against this (see validateProgrammeNames in server.js).
+const PROGRAMMES = [
+  "Bachelor of Architecture",
+  "Bachelor of Design",
+  "Bachelor of Technology (Climate Change)",
+  "Bachelor of Visual Arts",
+  "Anant Fellowship for Climate Action",
+  "Master of Design",
+  "MSc",
+  "Anant Fellowship in Sustainability and Built Environment",
+  "PhD"
+];
+
+// Schools & the (canonical) programmes each one teaches. These are a
+// starting placeholder — reassign real programmes per school via Users &
+// Roles → Schools & Programmes once you know the real mapping.
 const SCHOOLS = [
-  { code: "SOT", name: "School of Technology", programmes: ["B.Tech Computer Science", "B.Des Product Design", "B.Des Product Design (Hons)"] },
-  { code: "SOA", name: "School of Environment and Architecture", programmes: ["B.Arch"] },
-  { code: "SOB", name: "School of Business", programmes: ["BBA"] }
+  { code: "SOT", name: "School of Technology", programmes: ["Bachelor of Technology (Climate Change)"] },
+  { code: "SOA", name: "School of Environment and Architecture", programmes: ["Bachelor of Architecture"] },
+  { code: "SOD", name: "School of Design", programmes: ["Bachelor of Design", "Master of Design"] }
 ];
 
 // Demo accounts — one per role, matching the escalation table stakeholders.
+// Students never have a password (see server.js student OTP login) —
+// aarav.mehta signs in with email + one-time code, not a "password" below.
 const USERS = [
-  { username: "aarav.mehta", password: "student123", name: "Aarav Mehta", role_code: "student",
-    student_sdmis_id: "SDM-2023-00451", program: "B.Des Product Design", school_dept: "School of Technology", school_code: "SOT", residency: "HOSTELLER" },
+  { username: "aarav.mehta", name: "Aarav Mehta", role_code: "student",
+    student_sdmis_id: "SDM-2023-00451", program: "Bachelor of Technology (Climate Change)", batch: "2023-2027",
+    school_dept: "School of Technology", school_code: "SOT", residency: "HOSTELLER" },
   { username: "priya.desai", password: "admin123", name: "Priya Desai", role_code: "school_admin", school_code: "SOT" },
   { username: "karan.bose", password: "admin123", name: "Karan Bose", role_code: "exam_admin" },
   { username: "meera.iyer", password: "admin123", name: "Meera Iyer", role_code: "fees_finaid_admin" },
@@ -73,6 +92,13 @@ async function main() {
       );
     }
 
+    for (let i = 0; i < PROGRAMMES.length; i++) {
+      await client.query(
+        "INSERT INTO programmes (name, sort_order) VALUES ($1,$2) ON CONFLICT (name) DO UPDATE SET sort_order = EXCLUDED.sort_order",
+        [PROGRAMMES[i], i + 1]
+      );
+    }
+
     const schoolIdByCode = {};
     for (const s of SCHOOLS) {
       const r = await client.query(
@@ -85,20 +111,24 @@ async function main() {
     }
 
     for (const u of USERS) {
-      const hash = await bcrypt.hash(u.password, 10);
+      // Students authenticate by email + one-time code, never a password —
+      // this hash is an unused placeholder to satisfy the NOT NULL column.
+      const hash = u.password ? await bcrypt.hash(u.password, 10) : await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10);
       const schoolId = u.school_code ? schoolIdByCode[u.school_code] : null;
       await client.query(
-        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, role_code = EXCLUDED.role_code, school_id = EXCLUDED.school_id`,
-        [u.username, hash, u.name, u.role_code, u.student_sdmis_id || null, u.program || null, u.school_dept || null, u.residency || null, schoolId]
+        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, batch, school_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         ON CONFLICT (username) DO UPDATE SET name = EXCLUDED.name, role_code = EXCLUDED.role_code, school_id = EXCLUDED.school_id`,
+        [u.username, hash, u.name, u.role_code, u.student_sdmis_id || null, u.program || null, u.school_dept || null, u.residency || null, u.batch || null, schoolId]
       );
     }
 
     await client.query("COMMIT");
-    console.log("Seed complete:", ROLES.length, "roles,", CERT_TYPES.length, "certificate types,", SCHOOLS.length, "schools,", USERS.length, "demo users.");
-    console.log("Demo logins (username / password):");
-    USERS.forEach((u) => console.log("  " + u.username + " / " + u.password + "  (" + u.role_code + ")"));
+    console.log("Seed complete:", ROLES.length, "roles,", CERT_TYPES.length, "certificate types,", PROGRAMMES.length, "programmes,", SCHOOLS.length, "schools,", USERS.length, "demo users.");
+    console.log("Official logins (username / password):");
+    USERS.filter((u) => u.password).forEach((u) => console.log("  " + u.username + " / " + u.password + "  (" + u.role_code + ")"));
+    console.log("Student login (email + one-time code, at /student):");
+    USERS.filter((u) => !u.password).forEach((u) => console.log("  " + u.username + "  (" + u.role_code + ")"));
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("Seed failed:", e);

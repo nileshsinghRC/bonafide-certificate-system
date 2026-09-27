@@ -235,6 +235,65 @@ do wire this to the real SDMIS:
   exposed, and keep it out of any client-side code — it's a server-to-server
   secret only.
 
+## v4 — separate student/staff login, email + one-time code, canonical programmes
+
+**Two login URLs.** `/student` and `/staff` each serve a dedicated sign-in
+screen from the same single-page app (no separate build); `/` shows a
+chooser between them. All three are just different starting views of
+`public/index.html` — routing is client-side (`window.location.pathname`
+read once at load, `history.pushState` on internal navigation), so the
+Express side needed no changes beyond the catch-all it already had.
+
+**Students never have a password.** A student can only sign in with an
+email that's *already on record* — added by Super Admin (single-entry
+"Add a student" form, CSV paste, or Excel upload) or via the SDMIS sync API.
+There is no path anywhere in this codebase that creates a student account
+from an unrecognized email — `POST /api/auth/student/request-otp` looks the
+email up first and returns `404 NOT_RECOGNIZED` if it isn't already a
+student row. If it is, a 6-digit code is generated, bcrypt-hashed, and
+stored with a 10-minute expiry (`users.otp_code_hash` /
+`otp_expires_at`); `POST /api/auth/student/verify-otp` checks it, consumes
+it (single-use), and returns a normal JWT — same session mechanism as
+everyone else from that point on. Officials are unaffected — `/staff`
+still uses the original `POST /api/auth/login` username+password flow.
+
+⚠️ **No email provider is connected yet.** `request-otp` currently returns
+the code directly in the API response (`devOtp`) as a stopgap — the
+frontend shows it in a clearly-labeled "Demo mode" banner. Before real
+students touch this, wire actual email delivery (see `[otp]` console.log in
+`server.js` — that's the line to replace) and delete the `devOtp` field from
+the response; shipping a login code in an API response is a demo
+convenience, not something to leave in production.
+
+**Canonical programme list**, from the university's real programme names —
+seeded into a `programmes` table (`db/seed.js`), not hardcoded in the app:
+
+```
+Bachelor of Architecture · Bachelor of Design · Bachelor of Technology (Climate Change)
+Bachelor of Visual Arts · Anant Fellowship for Climate Action · Master of Design
+MSc · Anant Fellowship in Sustainability and Built Environment · PhD
+```
+
+`POST/PATCH /api/schools` now validates every submitted programme name
+against this table and rejects anything not on it
+(`422 UNKNOWN_PROGRAMMES`) — the "Add school" screen enforces this with a
+multi-select populated from `GET /api/programmes`, not free text. The
+existing student/programme school-matching (`matchSchoolForProgramme`) is
+unchanged, but now only ever matches against these real names.
+
+**"Add a student" single-entry form** (Users & Roles, above the bulk-import
+panel): School dropdown → Programme dropdown cascades to that school's own
+programme list → Batch (free text, e.g. `2023-2027`) → Residency. Submits
+through the same `bulkUpsertStudents` path as CSV/Excel, so validation is
+identical either way.
+
+**Demo schools' programme tags are a placeholder**, remapped to draw only
+from the real list above (I don't know your actual school ↔ programme
+mapping): School of Technology → Bachelor of Technology (Climate Change);
+School of Environment and Architecture → Bachelor of Architecture. Reassign
+these properly via Users & Roles → Schools & Programmes once real data is
+available — the multi-select makes this a few clicks, not a migration.
+
 ## Deploying — GitHub + Neon + Render
 
 1. **Push to GitHub**
@@ -328,7 +387,8 @@ confirms before submitting.
   an HSM or signing service, per the earlier architecture spec, so the PDF
   is tamper-evident and not just visually signed.
 - **Email delivery**: `POST /registrar/applications/:id/upload-signature` sets
-  `notified_at`/`notification_channel` and logs a `[notify] ...` line, but no
-  SMTP provider is connected — wire `sendEmail()` (currently just a
-  `console.log`) to an actual provider (SES, SendGrid, etc.) to make the
-  "automated email with a download link" real rather than a stub.
+  `notified_at`/`notification_channel` and logs a `[notify] ...` line, and
+  `POST /api/auth/student/request-otp` returns the OTP directly in its
+  response (`devOtp`) — but no SMTP provider is connected. Wire real email
+  delivery (SES, SendGrid, etc.) for both, and remove `devOtp` from the OTP
+  response once that's in place.

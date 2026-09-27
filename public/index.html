@@ -150,10 +150,46 @@
 <body>
 
 <div id="login-screen">
-  <div class="login-card">
+  <div class="login-card" id="chooser-pane">
     <div class="login-brand">
       <div class="seal">R</div>
       <div><h1>Registrar's Desk</h1><p>Bonafide Certificate System — Anant National University</p></div>
+    </div>
+    <p class="label" style="margin-bottom:10px;">Continue as</p>
+    <button class="btn maroon" id="chooser-student" style="width:100%;margin-bottom:8px;">Student</button>
+    <button class="btn ghost" id="chooser-staff" style="width:100%;">University Staff / Admin</button>
+    <p style="margin-top:16px;text-align:center;"><button type="button" class="link-btn" id="chooser-verify" style="color:var(--focus);">Verify a certificate →</button></p>
+  </div>
+
+  <div class="login-card" id="student-pane" style="display:none;">
+    <div class="login-brand">
+      <div class="seal">R</div>
+      <div><h1>Student Sign In</h1><p>Bonafide Certificate System — Anant National University</p></div>
+    </div>
+    <div id="student-step-email">
+      <p class="label">University email</p>
+      <input type="text" id="student-email" autocomplete="username" placeholder="you@anu.edu.in">
+      <div id="student-email-error" class="login-error" style="display:none;"></div>
+      <button class="btn maroon" id="student-send-otp" style="margin-top:14px;width:100%;">Send code</button>
+      <p class="section-sub" style="margin-top:10px;">Only university email addresses already on record with your School's Office can sign in. New here? Ask your School's Office to add you first.</p>
+    </div>
+    <div id="student-step-otp" style="display:none;">
+      <p class="label">Code sent to <span id="student-email-echo"></span></p>
+      <input type="text" id="student-otp" placeholder="6-digit code" autocomplete="one-time-code">
+      <div id="student-otp-dev" class="banner clear" style="display:none;margin-top:8px;"></div>
+      <div id="student-otp-error" class="login-error" style="display:none;"></div>
+      <button class="btn maroon" id="student-verify-otp" style="margin-top:14px;width:100%;">Verify &amp; sign in</button>
+      <p style="margin-top:10px;text-align:center;"><button type="button" class="link-btn" id="student-resend-otp" style="color:var(--focus);">Resend code</button></p>
+    </div>
+    <p style="margin-top:16px;text-align:center;">
+      <button type="button" class="link-btn" id="student-to-staff" style="color:var(--focus);">University staff? Sign in here →</button>
+    </p>
+  </div>
+
+  <div class="login-card" id="staff-pane" style="display:none;">
+    <div class="login-brand">
+      <div class="seal">R</div>
+      <div><h1>Staff Sign In</h1><p>Bonafide Certificate System — Anant National University</p></div>
     </div>
     <div class="login-tabs">
       <button type="button" class="login-tab active" data-tab="signin">Sign in</button>
@@ -170,6 +206,9 @@
         <p class="label" style="margin-top:18px;">Demo accounts — click one to fill it in</p>
         <div id="demo-account-list"></div>
       </div>
+      <p style="margin-top:16px;text-align:center;">
+        <button type="button" class="link-btn" id="staff-to-student" style="color:var(--focus);">Student? Sign in here →</button>
+      </p>
     </div>
     <div id="login-pane-verify" class="login-pane">
       <p class="label">Certificate number or verification token</p>
@@ -306,9 +345,26 @@
     </div>
 
     <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <p class="label" style="margin:0;">Add a student</p>
+      </div>
+      <p class="section-sub" style="margin-bottom:8px;">Adds one student to the roster — they'll sign in with their email and a one-time code at <code>/student</code>, no password to distribute.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><p class="label">University email</p><input type="text" id="new-student-email" placeholder="student@anu.edu.in"></div>
+        <div><p class="label">Full name</p><input type="text" id="new-student-name"></div>
+        <div><p class="label">School</p><select id="new-student-school"></select></div>
+        <div><p class="label">Programme</p><select id="new-student-programme"></select></div>
+        <div><p class="label">Batch</p><input type="text" id="new-student-batch" placeholder="e.g. 2023-2027"></div>
+        <div><p class="label">Residency</p><select id="new-student-residency"><option value="DAY_SCHOLAR">Day Scholar</option><option value="HOSTELLER">Hosteller</option></select></div>
+      </div>
+      <button class="btn small" id="new-student-add" style="margin-top:10px;">Add student</button>
+      <div class="import-result" id="new-student-result"></div>
+    </div>
+
+    <div class="panel">
       <p class="label">Bulk import students — paste CSV</p>
-      <p class="section-sub" style="margin-bottom:8px;">One student per line: <code>email,name,studentSdmisId,program,schoolDept,residency</code>. New accounts get a temporary password shown below — share it securely; they'll be forced to set their own on first login. Existing accounts (matched by email) just get their profile fields refreshed, and their school is re-validated against the programme lists above.</p>
-      <textarea class="import-textarea" id="import-textarea" placeholder="aarav.mehta@anu.edu.in,Aarav Mehta,SDM-2023-00451,B.Des Product Design,School of Technology,HOSTELLER"></textarea>
+      <p class="section-sub" style="margin-bottom:8px;">One student per line: <code>email,name,studentSdmisId,program,schoolDept,residency</code>. Students sign in with email + a one-time code (no password to distribute) — existing accounts (matched by email) just get their profile fields refreshed, and their school is re-validated against the programme lists above.</p>
+      <textarea class="import-textarea" id="import-textarea" placeholder="student@anu.edu.in,A Student,SDM-2023-00451,Bachelor of Architecture,School of Environment and Architecture,HOSTELLER"></textarea>
       <button class="btn small" id="import-btn" style="margin-top:8px;">Import</button>
       <p class="label" style="margin-top:16px;">…or upload an Excel file</p>
       <p class="section-sub" style="margin-bottom:8px;">Header row: <code>email, name, studentSdmisId, program, schoolDept, residency</code> (any order).</p>
@@ -367,8 +423,9 @@
     <h3>Add school</h3>
     <p class="label">School code</p><input type="text" id="new-school-code" placeholder="e.g. SOD">
     <p class="label" style="margin-top:10px;">School name</p><input type="text" id="new-school-name" placeholder="e.g. School of Design">
-    <p class="label" style="margin-top:10px;">Programmes (comma-separated)</p>
-    <textarea id="new-school-programmes" placeholder="B.Des Communication Design, B.Des Interior Design"></textarea>
+    <p class="label" style="margin-top:10px;">Programmes offered</p>
+    <select id="new-school-programmes" multiple size="6" style="height:auto;"></select>
+    <p class="section-sub" style="margin-top:4px;">Ctrl/Cmd-click to select more than one.</p>
     <div class="modal-actions">
       <button class="btn ghost small" id="school-cancel">Cancel</button>
       <button class="btn maroon small" id="school-confirm">Create school</button>
@@ -471,7 +528,6 @@
   var ROLE_LABEL = { student:"Student", school_admin:"School's Office", exam_admin:"Exam Office", fees_finaid_admin:"Fees & Financial Aid Dept", admission_admin:"Admission Office", warden:"Warden", registrar_admin:"Registrar's Office", super_admin:"Super Admin" };
 
   var DEMO_ACCOUNTS = [
-    {u:"aarav.mehta", p:"student123", n:"Aarav Mehta", r:"Student"},
     {u:"priya.desai", p:"admin123", n:"Priya Desai", r:"School's Office"},
     {u:"karan.bose", p:"admin123", n:"Karan Bose", r:"Exam Office"},
     {u:"meera.iyer", p:"admin123", n:"Meera Iyer", r:"Fees & Financial Aid Dept"},
@@ -480,6 +536,7 @@
     {u:"fatima.qureshi", p:"admin123", n:"Fatima Qureshi", r:"Registrar's Office"},
     {u:"admin", p:"super123", n:"Super Admin", r:"Super Admin"}
   ];
+  var DEMO_STUDENT_EMAIL = "aarav.mehta"; // shown as a hint on the student sign-in pane
 
   function api(path, opts){
     opts = opts || {};
@@ -534,7 +591,34 @@
     }).join("") + '</div>';
   }
 
-  // ---------------- LOGIN ----------------
+  // ---------------- LOGIN: chooser / staff / student routing ----------------
+  function showLoginPane(which){
+    ["chooser-pane","student-pane","staff-pane"].forEach(function(id){
+      document.getElementById(id).style.display = (id === which+"-pane") ? "block" : "none";
+    });
+  }
+  function goToStaffPane(pushUrl){
+    showLoginPane("staff");
+    if(pushUrl !== false) history.pushState(null, "", "/staff");
+  }
+  function goToStudentPane(pushUrl){
+    showLoginPane("student");
+    resetStudentLoginForm();
+    if(pushUrl !== false) history.pushState(null, "", "/student");
+  }
+  function goToChooserPane(pushUrl){
+    showLoginPane("chooser");
+    if(pushUrl !== false) history.pushState(null, "", "/");
+  }
+  document.getElementById("chooser-student").addEventListener("click", function(){ goToStudentPane(); });
+  document.getElementById("chooser-staff").addEventListener("click", function(){ goToStaffPane(); });
+  document.getElementById("chooser-verify").addEventListener("click", function(){
+    goToStaffPane();
+    document.querySelector('.login-tab[data-tab="verify"]').click();
+  });
+  document.getElementById("student-to-staff").addEventListener("click", function(){ goToStaffPane(); });
+  document.getElementById("staff-to-student").addEventListener("click", function(){ goToStudentPane(); });
+
   document.querySelectorAll(".login-tab").forEach(function(tab){
     tab.addEventListener("click", function(){
       document.querySelectorAll(".login-tab").forEach(function(x){x.classList.remove("active");});
@@ -578,6 +662,56 @@
     showLoginScreen();
   });
 
+  // ---------------- STUDENT LOGIN: email + one-time code ----------------
+  function resetStudentLoginForm(){
+    document.getElementById("student-step-email").style.display = "block";
+    document.getElementById("student-step-otp").style.display = "none";
+    document.getElementById("student-email").value = "";
+    document.getElementById("student-otp").value = "";
+    document.getElementById("student-email-error").style.display = "none";
+    document.getElementById("student-otp-error").style.display = "none";
+    document.getElementById("student-otp-dev").style.display = "none";
+  }
+  function studentSendOtp(){
+    var email = document.getElementById("student-email").value.trim();
+    var errEl = document.getElementById("student-email-error");
+    errEl.style.display = "none";
+    if(!email){ errEl.textContent = "Enter your university email."; errEl.style.display = "block"; return; }
+    fetch("/api/auth/student/request-otp", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email:email})})
+      .then(function(r){ return r.json().then(function(body){ if(!r.ok) throw (body && body.error) || {message:"Could not send a code."}; return body; }); })
+      .then(function(res){
+        document.getElementById("student-email-echo").textContent = email;
+        document.getElementById("student-step-email").style.display = "none";
+        document.getElementById("student-step-otp").style.display = "block";
+        var devEl = document.getElementById("student-otp-dev");
+        if(res.devOtp){
+          devEl.innerHTML = '<span class="dot"></span> Demo mode — no email service connected yet. Your code is <strong>'+escapeHtml(res.devOtp)+'</strong>.';
+          devEl.style.display = "flex";
+        }
+      })
+      .catch(function(e){ errEl.textContent = e.message; errEl.style.display = "block"; });
+  }
+  document.getElementById("student-send-otp").addEventListener("click", studentSendOtp);
+  document.getElementById("student-email").addEventListener("keydown", function(e){ if(e.key==="Enter") studentSendOtp(); });
+  document.getElementById("student-resend-otp").addEventListener("click", studentSendOtp);
+  function studentVerifyOtp(){
+    var email = document.getElementById("student-email-echo").textContent;
+    var otp = document.getElementById("student-otp").value.trim();
+    var errEl = document.getElementById("student-otp-error");
+    errEl.style.display = "none";
+    if(!otp){ errEl.textContent = "Enter the code."; errEl.style.display = "block"; return; }
+    fetch("/api/auth/student/verify-otp", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({email:email, otp:otp})})
+      .then(function(r){ return r.json().then(function(body){ if(!r.ok) throw (body && body.error) || {message:"Could not verify that code."}; return body; }); })
+      .then(function(res){
+        localStorage.setItem(TOKEN_KEY, res.token);
+        STATE.user = res.user;
+        enterApp();
+      })
+      .catch(function(e){ errEl.textContent = e.message; errEl.style.display = "block"; });
+  }
+  document.getElementById("student-verify-otp").addEventListener("click", studentVerifyOtp);
+  document.getElementById("student-otp").addEventListener("keydown", function(e){ if(e.key==="Enter") studentVerifyOtp(); });
+
   function runVerify(inputId, resultId){
     var q = document.getElementById(inputId).value.trim();
     var res = document.getElementById(resultId);
@@ -605,6 +739,11 @@
     document.getElementById("login-password").value = "";
     document.getElementById("login-error").style.display = "none";
     renderDemoAccounts();
+    resetStudentLoginForm();
+    var path = window.location.pathname;
+    if(path.indexOf("/student") === 0) showLoginPane("student");
+    else if(path.indexOf("/staff") === 0) showLoginPane("staff");
+    else showLoginPane("chooser");
   }
 
   // ---------------- NAV ----------------
@@ -1169,28 +1308,38 @@
   });
 
   // ---------------- SCHOOLS & PROGRAMMES ----------------
+  var PROGRAMMES_CACHE = [];
+  var SCHOOLS_CACHE = [];
   function loadSchoolsPanel(){
-    api("/api/schools").then(function(schools){
+    Promise.all([api("/api/schools"), api("/api/programmes")]).then(function(res){
+      SCHOOLS_CACHE = res[0];
+      PROGRAMMES_CACHE = res[1];
       var wrap = document.getElementById("schools-ledger");
-      if(!schools.length){ wrap.innerHTML = '<div class="ledger-empty">No schools yet.</div>'; return; }
-      wrap.innerHTML = schools.map(function(s){
-        return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
-          '<div class="main"><div class="code">'+escapeHtml(s.name)+' ('+escapeHtml(s.code)+')</div>'+
-          '<div class="meta">'+(s.programmes||[]).map(escapeHtml).join(", ")+'</div></div></div>';
-      }).join("");
+      if(!SCHOOLS_CACHE.length){ wrap.innerHTML = '<div class="ledger-empty">No schools yet.</div>'; }
+      else {
+        wrap.innerHTML = SCHOOLS_CACHE.map(function(s){
+          return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
+            '<div class="main"><div class="code">'+escapeHtml(s.name)+' ('+escapeHtml(s.code)+')</div>'+
+            '<div class="meta">'+(s.programmes||[]).map(escapeHtml).join(", ")+'</div></div></div>';
+        }).join("");
+      }
+      populateNewStudentSchoolPicker();
     });
   }
   document.getElementById("add-school-btn").addEventListener("click", function(){
     document.getElementById("new-school-code").value = "";
     document.getElementById("new-school-name").value = "";
-    document.getElementById("new-school-programmes").value = "";
+    document.getElementById("new-school-programmes").innerHTML = PROGRAMMES_CACHE.map(function(p){
+      return '<option value="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</option>';
+    }).join("");
     document.getElementById("school-overlay").classList.add("open");
   });
   document.getElementById("school-cancel").addEventListener("click", function(){ document.getElementById("school-overlay").classList.remove("open"); });
   document.getElementById("school-confirm").addEventListener("click", function(){
     var code = document.getElementById("new-school-code").value.trim();
     var name = document.getElementById("new-school-name").value.trim();
-    var programmes = document.getElementById("new-school-programmes").value.split(",").map(function(p){return p.trim();}).filter(Boolean);
+    var sel = document.getElementById("new-school-programmes");
+    var programmes = Array.prototype.filter.call(sel.options, function(o){ return o.selected; }).map(function(o){ return o.value; });
     if(!code || !name){ alert("Code and name are required."); return; }
     api("/api/schools", {method:"POST", body: JSON.stringify({code:code, name:name, programmes:programmes})}).then(function(){
       document.getElementById("school-overlay").classList.remove("open");
@@ -1198,20 +1347,55 @@
     }).catch(function(e){ alert(e.message); });
   });
 
+  // ---------------- ADD STUDENT (single entry, School -> Programme cascade) ----------------
+  function populateNewStudentSchoolPicker(){
+    var sel = document.getElementById("new-student-school");
+    sel.innerHTML = SCHOOLS_CACHE.map(function(s){ return '<option value="'+s.school_id+'">'+escapeHtml(s.name)+'</option>'; }).join("");
+    populateNewStudentProgrammePicker();
+  }
+  function populateNewStudentProgrammePicker(){
+    var schoolId = document.getElementById("new-student-school").value;
+    var school = SCHOOLS_CACHE.filter(function(s){ return String(s.school_id) === String(schoolId); })[0];
+    var progs = (school && school.programmes) || [];
+    document.getElementById("new-student-programme").innerHTML = progs.length
+      ? progs.map(function(p){ return '<option value="'+escapeHtml(p)+'">'+escapeHtml(p)+'</option>'; }).join("")
+      : '<option value="">— no programmes set for this school —</option>';
+  }
+  document.getElementById("new-student-school").addEventListener("change", populateNewStudentProgrammePicker);
+  document.getElementById("new-student-add").addEventListener("click", function(){
+    var schoolId = document.getElementById("new-student-school").value;
+    var school = SCHOOLS_CACHE.filter(function(s){ return String(s.school_id) === String(schoolId); })[0];
+    var student = {
+      email: document.getElementById("new-student-email").value.trim(),
+      name: document.getElementById("new-student-name").value.trim(),
+      program: document.getElementById("new-student-programme").value,
+      schoolDept: school ? school.name : "",
+      batch: document.getElementById("new-student-batch").value.trim(),
+      residency: document.getElementById("new-student-residency").value
+    };
+    if(!student.email || !student.name){ alert("Email and name are required."); return; }
+    api("/api/admin/students/bulk-import", {method:"POST", body: JSON.stringify({students:[student]})}).then(function(res){
+      renderImportResult(res, "new-student-result");
+      document.getElementById("new-student-email").value = "";
+      document.getElementById("new-student-name").value = "";
+      document.getElementById("new-student-batch").value = "";
+    }).catch(function(e){ alert(e.message); });
+  });
+
   // ---------------- BULK STUDENT IMPORT (CSV + Excel share this renderer) ----------------
-  function renderImportResult(res){
+  function renderImportResult(res, targetId){
     var html = '<div class="banner clear"><span class="dot"></span> '+res.created.length+' created, '+res.updated.length+' updated'+(res.errors.length ? ", "+res.errors.length+" skipped" : "")+'.</div>';
     if(res.created.length){
-      html += '<table><tr><th>Email</th><th>Temporary password</th></tr>' +
-        res.created.map(function(c){ return '<tr><td>'+escapeHtml(c.email)+'</td><td><code>'+escapeHtml(c.tempPassword)+'</code></td></tr>'; }).join("") +
-        '</table><p class="section-sub" style="margin:8px 0 0;">Copy these now — they won\'t be shown again. Share each one only with that student.</p>';
+      html += '<table><tr><th>Email</th><th></th></tr>' +
+        res.created.map(function(c){ return '<tr><td>'+escapeHtml(c.email)+'</td><td>'+escapeHtml(c.note||"")+'</td></tr>'; }).join("") +
+        '</table>';
     }
     if(res.errors.length){
       html += '<table style="margin-top:10px;"><tr><th>Skipped</th><th>Reason</th></tr>' +
         res.errors.map(function(e){ return '<tr><td>'+escapeHtml(e.email||"—")+'</td><td>'+escapeHtml(e.reason)+'</td></tr>'; }).join("") +
         '</table>';
     }
-    document.getElementById("import-result").innerHTML = html;
+    document.getElementById(targetId || "import-result").innerHTML = html;
     if(STATE.user.role === "super_admin") loadUsersScreen();
   }
   document.getElementById("import-btn").addEventListener("click", function(){
@@ -1332,11 +1516,17 @@
   } else {
     showLoginScreen();
     if(verifyParam){
+      goToStaffPane(false);
       document.querySelector('.login-tab[data-tab="verify"]').click();
       document.getElementById("verify-input-pub").value = verifyParam;
       document.getElementById("verify-btn-pub").click();
     }
   }
+
+  // Keep panes in sync with browser back/forward between /, /student, /staff
+  window.addEventListener("popstate", function(){
+    if(!STATE.user) showLoginScreen();
+  });
 })();
 </script>
 </body>

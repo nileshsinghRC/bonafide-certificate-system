@@ -25,8 +25,17 @@ CREATE TABLE IF NOT EXISTS schools (
     school_id    SMALLSERIAL PRIMARY KEY,
     code         VARCHAR(40) NOT NULL UNIQUE,
     name         VARCHAR(150) NOT NULL,
-    programmes   JSONB NOT NULL DEFAULT '[]'::jsonb,  -- programme names taught by this school
+    programmes   JSONB NOT NULL DEFAULT '[]'::jsonb,  -- programme names taught by this school (validated against `programmes` below)
     is_active    BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- Canonical, university-wide list of programme names. A school's
+-- `programmes` array and a student's `program` field are both validated
+-- against this list at write time (see validateProgrammeNames in server.js).
+CREATE TABLE IF NOT EXISTS programmes (
+    programme_id SMALLSERIAL PRIMARY KEY,
+    name         VARCHAR(150) NOT NULL UNIQUE,
+    sort_order   SMALLINT NOT NULL DEFAULT 0
 );
 
 -- ---------------- USERS ----------------
@@ -41,12 +50,15 @@ CREATE TABLE IF NOT EXISTS users (
     school_dept   VARCHAR(100),
     school_id     SMALLINT REFERENCES schools(school_id), -- School Admin: which school they manage; Student: which school their programme belongs to
     residency     VARCHAR(20),             -- DAY_SCHOLAR / HOSTELLER, student only
+    batch         VARCHAR(20),             -- e.g. "2023-2027", student only
     active        BOOLEAN NOT NULL DEFAULT TRUE,
-    must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- forced on accounts created by bulk import / SDMIS sync
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- forced on official accounts created by bulk import; students never use a password
     profile_picture_url TEXT,              -- synced from SDMIS on every login
     profile_picture_synced_at TIMESTAMPTZ,
     tuition_fee_amount NUMERIC(12,2),      -- placeholder until a real central fee DB is wired (see README)
     hostel_fee_amount NUMERIC(12,2),
+    otp_code_hash TEXT,                    -- student login: one-time code, never a password
+    otp_expires_at TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );

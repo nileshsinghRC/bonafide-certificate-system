@@ -87,20 +87,21 @@ async function bulkUpsertStudents(client, students) {
     const existing = await client.query("SELECT user_id FROM users WHERE lower(username) = $1", [email]);
     if (existing.rows[0]) {
       await client.query(
-        `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5, school_id = $6
-         WHERE user_id = $7`,
-        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, existing.rows[0].user_id]
+        `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5, school_id = $6, batch = $7
+         WHERE user_id = $8`,
+        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null, existing.rows[0].user_id]
       );
       updated.push(email + schoolWarning);
     } else {
-      const tempPassword = generateTempPassword();
-      const hash = await bcrypt.hash(tempPassword, 10);
+      // Students authenticate by email + one-time code, never a password — this
+      // hash is an unused placeholder to satisfy the NOT NULL column.
+      const placeholderHash = await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10);
       await client.query(
-        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id, must_change_password)
-         VALUES ($1,$2,$3,'student',$4,$5,$6,$7,$8,true)`,
-        [email, hash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId]
+        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id, batch, must_change_password)
+         VALUES ($1,$2,$3,'student',$4,$5,$6,$7,$8,$9,false)`,
+        [email, placeholderHash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null]
       );
-      created.push({ email, tempPassword, school: schoolWarning ? null : schoolId });
+      created.push({ email, note: "Can sign in with a one-time code sent to this email" + schoolWarning, school: schoolId });
     }
   }
   return { created, updated, errors };
@@ -129,6 +130,8 @@ function recordLoginFailure(key) {
   LOGIN_ATTEMPTS.set(key, rec);
 }
 function clearLoginFailures(key) { LOGIN_ATTEMPTS.delete(key); }
+
+function generateOtp() { return String(Math.floor(100000 + Math.random() * 900000)); }
 
 // Machine-to-machine auth for the SDMIS sync endpoint — a static API key,
 // never a user JWT, since this is meant to be called by a deployment script
@@ -265,7 +268,7 @@ app.get("/api/me", requireAuth, async (req, res) => {
   res.json({
     id: user.user_id, username: user.username, name: user.name, role: user.role_code,
     studentSdmisId: user.student_sdmis_id, program: user.program, schoolDept: user.school_dept,
-    residency: user.residency, mustChangePassword: user.must_change_password,
+    batch: user.batch, residency: user.residency, mustChangePassword: user.must_change_password,
     profilePictureUrl: user.profile_picture_url
   });
 });
@@ -279,6 +282,78 @@ app.post("/api/me/password", requireAuth, async (req, res) => {
   const hash = await bcrypt.hash(newPassword, 10);
   await pool.query("UPDATE users SET password_hash = $1, must_change_password = false WHERE user_id = $2", [hash, req.auth.userId]);
   res.json({ ok: true });
+});
+
+// ============================================================
+// STUDENT LOGIN — email + one-time code, never a password.
+// A student can only request a code if their email already exists in the
+// roster Super Admin (or the SDMIS sync API) pre-loaded — this is the "only
+// pre-existing/validated students can register" rule. There is no path here
+// that creates a student account on the fly from an unrecognized email.
+// ============================================================
+app.post("/api/auth/student/request-otp", async (req, res) => {
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+  if (!email) return err(res, 400, "MISSING_EMAIL", "Enter your university email address.");
+  const rlKey = "otp:" + email;
+  if (!checkLoginRateLimit(rlKey)) return err(res, 429, "TOO_MANY_ATTEMPTS", "Too many requests for this email. Try again in a few minutes.");
+
+  const { rows } = await pool.query("SELECT * FROM users WHERE lower(username) = $1 AND role_code = 'student'", [email]);
+  const user = rows[0];
+  if (!user) {
+    recordLoginFailure(rlKey);
+    return err(res, 404, "NOT_RECOGNIZED", "This email isn't in the student records yet. Ask your School's Office to add you.");
+  }
+  if (!user.active) return err(res, 403, "ACCOUNT_DEACTIVATED", "This account has been deactivated. Contact a Super Admin.");
+
+  const otp = generateOtp();
+  const hash = await bcrypt.hash(otp, 10);
+  await pool.query("UPDATE users SET otp_code_hash = $1, otp_expires_at = now() + interval '10 minutes' WHERE user_id = $2", [hash, user.user_id]);
+
+  // TODO: real email delivery — no SMTP provider connected yet (see README
+  // "known gaps"). devOtp is returned directly here as a stopgap so the
+  // flow is fully usable before that's wired up; remove it once real email
+  // delivery is in place, since returning a login code in the API response
+  // is not something to ship to production as-is.
+  console.log("[otp] code for", email, "->", otp);
+  res.json({ sent: true, devOtp: otp });
+});
+
+app.post("/api/auth/student/verify-otp", async (req, res) => {
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+  const otp = String((req.body && req.body.otp) || "").trim();
+  if (!email || !otp) return err(res, 400, "MISSING_FIELDS", "Email and code are required.");
+  const rlKey = "otp-verify:" + email;
+  if (!checkLoginRateLimit(rlKey)) return err(res, 429, "TOO_MANY_ATTEMPTS", "Too many attempts. Request a new code in a few minutes.");
+
+  const { rows } = await pool.query("SELECT * FROM users WHERE lower(username) = $1 AND role_code = 'student'", [email]);
+  const user = rows[0];
+  if (!user || !user.otp_code_hash || !user.otp_expires_at || new Date(user.otp_expires_at) < new Date()) {
+    recordLoginFailure(rlKey);
+    return err(res, 401, "INVALID_OTP", "That code is invalid or has expired — request a new one.");
+  }
+  const ok = await bcrypt.compare(otp, user.otp_code_hash);
+  if (!ok) { recordLoginFailure(rlKey); return err(res, 401, "INVALID_OTP", "That code is invalid or has expired — request a new one."); }
+  clearLoginFailures(rlKey);
+
+  await pool.query("UPDATE users SET otp_code_hash = NULL, otp_expires_at = NULL WHERE user_id = $1", [user.user_id]);
+
+  if (!user.profile_picture_url) {
+    user.profile_picture_url = placeholderPhotoUrl(user.name);
+    await pool.query("UPDATE users SET profile_picture_url = $1, profile_picture_synced_at = now() WHERE user_id = $2", [user.profile_picture_url, user.user_id]);
+  } else {
+    await pool.query("UPDATE users SET profile_picture_synced_at = now() WHERE user_id = $1", [user.user_id]);
+  }
+
+  const token = signToken(user);
+  res.json({
+    token,
+    user: {
+      id: user.user_id, username: user.username, name: user.name, role: user.role_code,
+      studentSdmisId: user.student_sdmis_id, program: user.program, schoolDept: user.school_dept,
+      batch: user.batch, residency: user.residency, mustChangePassword: false,
+      profilePictureUrl: user.profile_picture_url
+    }
+  });
 });
 
 // ============================================================
@@ -1001,6 +1076,20 @@ app.post("/api/admin/students/bulk-import-excel", requireAuth, requireRole("supe
 // ============================================================
 // SCHOOLS & PROGRAMMES
 // ============================================================
+app.get("/api/programmes", requireAuth, async (req, res) => {
+  const { rows } = await pool.query("SELECT programme_id, name FROM programmes ORDER BY sort_order, name");
+  res.json(rows);
+});
+
+async function validateProgrammeNames(candidates) {
+  if (!Array.isArray(candidates) || !candidates.length) return { valid: [], invalid: [] };
+  const { rows } = await pool.query("SELECT name FROM programmes");
+  const known = new Set(rows.map((r) => r.name));
+  const valid = [], invalid = [];
+  candidates.forEach((c) => { (known.has(c) ? valid : invalid).push(c); });
+  return { valid, invalid };
+}
+
 app.get("/api/schools", requireAuth, async (req, res) => {
   const { rows } = await pool.query("SELECT * FROM schools WHERE is_active = true ORDER BY name");
   res.json(rows);
@@ -1009,10 +1098,12 @@ app.get("/api/schools", requireAuth, async (req, res) => {
 app.post("/api/schools", requireAuth, requireRole("super_admin"), async (req, res) => {
   const { code, name, programmes } = req.body || {};
   if (!code || !name) return err(res, 400, "MISSING_FIELDS", "code and name are required.");
+  const { valid, invalid } = await validateProgrammeNames(programmes);
+  if (invalid.length) return err(res, 422, "UNKNOWN_PROGRAMMES", "Not on the university's programme list: " + invalid.join(", "));
   try {
     const { rows } = await pool.query(
       "INSERT INTO schools (code, name, programmes) VALUES ($1,$2,$3) RETURNING *",
-      [code, name, JSON.stringify(Array.isArray(programmes) ? programmes : [])]
+      [code, name, JSON.stringify(valid)]
     );
     res.status(201).json(rows[0]);
   } catch (e) {
@@ -1026,7 +1117,11 @@ app.patch("/api/schools/:id", requireAuth, requireRole("super_admin"), async (re
   const { name, programmes, isActive } = req.body || {};
   const sets = [], vals = [];
   if (name !== undefined) { vals.push(name); sets.push("name = $" + vals.length); }
-  if (programmes !== undefined) { vals.push(JSON.stringify(programmes)); sets.push("programmes = $" + vals.length); }
+  if (programmes !== undefined) {
+    const { valid, invalid } = await validateProgrammeNames(programmes);
+    if (invalid.length) return err(res, 422, "UNKNOWN_PROGRAMMES", "Not on the university's programme list: " + invalid.join(", "));
+    vals.push(JSON.stringify(valid)); sets.push("programmes = $" + vals.length);
+  }
   if (isActive !== undefined) { vals.push(isActive); sets.push("is_active = $" + vals.length); }
   if (!sets.length) return err(res, 400, "NO_FIELDS", "Nothing to update.");
   vals.push(req.params.id);
