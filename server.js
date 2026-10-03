@@ -10,7 +10,9 @@ const XLSX = require("xlsx");
 
 const { pool } = require("./src/db");
 const { signToken, requireAuth, requireRole } = require("./src/auth");
-const { renderCertificateHtml } = require("./src/certificateTemplates");
+const { renderCertificateHtml, fieldsUsedBy, RENDERER_CODES } = require("./src/certificateTemplates");
+const { resolveAll, BY_KEY, PROFILE_KEYS, normGender } = require("./src/certificateFields");
+const { sanitizeCertificateHtml, findUnresolvedBlanks, finalizeHtml } = require("./src/certificateHtml");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 
@@ -23,7 +25,8 @@ app.use(express.json({ limit: "8mb" })); // signature/seal/logo images travel as
 const STAGE_TO_ROLE = {
   SCHOOL: "school_admin",
   EXAM: "exam_admin",
-  FEES_FINAID: "fees_finaid_admin",
+  FEES: "fees_admin",
+  FINAID: "finaid_admin",
   ADMISSION: "admission_admin",
   WARDEN: "warden"
 };
@@ -66,6 +69,42 @@ async function matchSchoolForProgramme(client, programme) {
   return null;
 }
 
+// ---------------- Student profile data (template blanks) ----------------
+// Extracts the certificate-relevant profile fields from an import row / API body.
+// Accepts snake_case or camelCase keys. Returns { profile, warnings } — only the
+// keys actually supplied are returned, so a re-import never blanks existing data.
+function snakeToCamel(k) { return k.replace(/_([a-z])/g, (_m, c) => c.toUpperCase()); }
+function extractProfile(raw) {
+  const profile = {};
+  const warnings = [];
+  PROFILE_KEYS.forEach((key) => {
+    let v = raw[key] !== undefined ? raw[key] : raw[snakeToCamel(key)];
+    if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) return;
+    if (key === "adept_scores") {
+      if (typeof v === "string") {
+        try { const parsed = JSON.parse(v); if (parsed && typeof parsed === "object") v = parsed; } catch (e) { /* keep as free text */ }
+      }
+      profile[key] = v;
+      return;
+    }
+    v = String(v).trim();
+    if (key === "gender") {
+      const g = normGender(v);
+      if (!g) { warnings.push("gender '" + v + "' not recognised (use M/F)"); return; }
+      profile[key] = g;
+      return;
+    }
+    if (key === "current_semester" || key === "completed_semester") {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1 || n > 12) { warnings.push(key + " '" + v + "' must be a number 1-12"); return; }
+      profile[key] = n;
+      return;
+    }
+    profile[key] = v;
+  });
+  return { profile, warnings };
+}
+
 // Shared by both the SDMIS sync API and the Super Admin bulk-import screen.
 // Creates new student accounts with a generated temporary password (forced
 // change on first login) and updates profile fields on accounts that already
@@ -84,24 +123,27 @@ async function bulkUpsertStudents(client, students) {
     const schoolId = await matchSchoolForProgramme(client, raw.program);
     const schoolWarning = raw.program && !schoolId ? " (no school matched this programme — assign manually in Users & Roles)" : "";
 
+    const prof = extractProfile(raw);
+    const profWarning = prof.warnings.length ? " (profile: " + prof.warnings.join("; ") + ")" : "";
     const existing = await client.query("SELECT user_id FROM users WHERE lower(username) = $1", [email]);
     if (existing.rows[0]) {
       await client.query(
-        `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5, school_id = $6, batch = $7
+        `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5, school_id = $6, batch = $7,
+                profile_data = COALESCE(profile_data, '{}'::jsonb) || $9::jsonb
          WHERE user_id = $8`,
-        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null, existing.rows[0].user_id]
+        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null, existing.rows[0].user_id, JSON.stringify(prof.profile)]
       );
-      updated.push(email + schoolWarning);
+      updated.push(email + schoolWarning + profWarning);
     } else {
       // Students authenticate by email + one-time code, never a password — this
       // hash is an unused placeholder to satisfy the NOT NULL column.
       const placeholderHash = await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10);
       await client.query(
-        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id, batch, must_change_password)
-         VALUES ($1,$2,$3,'student',$4,$5,$6,$7,$8,$9,false)`,
-        [email, placeholderHash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null]
+        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id, batch, must_change_password, profile_data)
+         VALUES ($1,$2,$3,'student',$4,$5,$6,$7,$8,$9,false,$10::jsonb)`,
+        [email, placeholderHash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null, JSON.stringify(prof.profile)]
       );
-      created.push({ email, note: "Can sign in with a one-time code sent to this email" + schoolWarning, school: schoolId });
+      created.push({ email, note: "Can sign in with a one-time code sent to this email" + schoolWarning + profWarning, school: schoolId });
     }
   }
   return { created, updated, errors };
@@ -202,6 +244,75 @@ function defaultCertificateDraft(application, feeSnapshot) {
     tuitionFeeInWords: fees[0] ? fees[0].amountInWords : "",
     hostelFeeInWords: fees[1] ? fees[1].amountInWords : ""
   };
+}
+
+// ---------------- Certificate field context (see src/certificateFields.js) ----------------
+// University-level constants the templates read from app_settings.
+const CERT_SETTING_KEYS = ["bank_account_number", "bank_ifsc", "bank_name", "bank_branch", "bank_branch_code",
+  "mysy_notify_email", "registry_email", "cgpa_scale"];
+
+// `db` is a pool or a checked-out client. Loads everything a template blank can
+// come from and resolves it. Returns the values plus the application copy the
+// renderer should use (department draft overrides from the older field editor
+// still apply, so nothing saved before this change is lost).
+async function loadCertificateValues(db, application) {
+  const stuRes = await db.query("SELECT * FROM users WHERE user_id = $1", [application.student_user_id]);
+  const student = stuRes.rows[0] || {};
+  let programme = null;
+  if (application.program) {
+    const pr = await db.query("SELECT * FROM programmes WHERE lower(name) = lower($1)", [application.program]);
+    programme = pr.rows[0] || null;
+  }
+  const setRes = await db.query("SELECT setting_key, setting_value FROM app_settings WHERE setting_key = ANY($1)", [CERT_SETTING_KEYS]);
+  const settings = {};
+  setRes.rows.forEach((r) => { settings[r.setting_key] = r.setting_value; });
+
+  const appCopy = Object.assign({}, application);
+  const draft = application.certificate_draft || {};
+  if (draft.studentName) appCopy.student_name = draft.studentName;
+  if (draft.programName) appCopy.program = draft.programName;
+  if (draft.residency) appCopy.residency = draft.residency;
+  if (!programme && appCopy.program !== application.program) {
+    const pr2 = await db.query("SELECT * FROM programmes WHERE lower(name) = lower($1)", [appCopy.program]);
+    programme = pr2.rows[0] || null;
+  }
+
+  const feeSnapshot = application.fee_snapshot || buildFeeSnapshot(student);
+  const values = resolveAll({ application: appCopy, student, programme, settings, feeSnapshot });
+  return { values, appCopy };
+}
+
+async function certTypeCodeOf(db, application) {
+  if (application.cert_type_code) return application.cert_type_code;
+  const r = await db.query("SELECT code FROM certificate_types WHERE cert_type_id = $1", [application.cert_type_id]);
+  return r.rows[0] && r.rows[0].code;
+}
+
+// Fresh, fully rendered certificate (draft form: issuance tokens still in place).
+async function renderDraftCertificateHtml(db, application) {
+  const code = await certTypeCodeOf(db, application);
+  const ctx = await loadCertificateValues(db, application);
+  return renderCertificateHtml(Object.assign({}, ctx.appCopy, { cert_type_code: code }), null, ctx.values);
+}
+
+// Re-render an already-issued certificate. New certificates carry a frozen
+// final_html; ones issued before that column existed are rendered from the
+// template using the stored signature / seal so they still print.
+async function renderIssuedCertificateHtml(db, row) {
+  if (row.final_html) return row.final_html;
+  const ctx = await loadCertificateValues(db, row);
+  return renderCertificateHtml(Object.assign({}, ctx.appCopy, { cert_type_code: row.cert_type_code }), row, ctx.values);
+}
+
+// School Admins only ever touch their own school's applications.
+async function canTouchApplication(req, application) {
+  if (req.auth.role === "student") return false;
+  if (req.auth.role === "school_admin") {
+    const ur = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [req.auth.userId]);
+    const mine = ur.rows[0] && ur.rows[0].school_id;
+    if (mine && application.school_id && mine !== application.school_id) return false;
+  }
+  return true;
 }
 
 // ---------------- SDMIS profile photo sync (placeholder — see README) ----------------
@@ -370,7 +481,7 @@ app.get("/api/certificate-types", requireAuth, async (req, res) => {
 // STUDENT: create + track applications
 // ============================================================
 app.post("/api/applications", requireAuth, requireRole("student", "super_admin"), async (req, res) => {
-  const { certTypeCode, purposeNote, documentAttached, undertakingConfirmed } = req.body || {};
+  const { certTypeCode, purposeNote, documentAttached, undertakingConfirmed, requestDetails } = req.body || {};
   if (!certTypeCode) return err(res, 400, "MISSING_FIELDS", "certTypeCode is required.");
 
   const client = await pool.connect();
@@ -390,6 +501,24 @@ app.post("/api/applications", requireAuth, requireRole("student", "super_admin")
       return err(res, 422, "UNDERTAKING_REQUIRED", "The signed MYSY undertaking must be attached before submitting.");
     }
 
+    // Per-request facts the certificate needs that no student record holds (VISA travel).
+    let details = {};
+    if (certType.code === "VISA_GENERAL") {
+      const d = requestDetails || {};
+      const clean = (v) => String(v == null ? "" : v).trim();
+      details = {
+        country: clean(d.country), eventName: clean(d.eventName), dateFrom: clean(d.dateFrom), dateTo: clean(d.dateTo),
+        sponsorship: clean(d.sponsorship).toUpperCase()
+      };
+      const missing = [];
+      if (!details.country) missing.push("country");
+      if (!details.eventName) missing.push("programme / event name");
+      if (!details.dateFrom || !details.dateTo || isNaN(new Date(details.dateFrom)) || isNaN(new Date(details.dateTo))) missing.push("travel dates");
+      if (["SPONSORED", "NON_SPONSORED"].indexOf(details.sponsorship) === -1) missing.push("sponsored / non-sponsored");
+      if (missing.length) return err(res, 422, "REQUEST_DETAILS_REQUIRED", "A VISA & Passport request needs: " + missing.join(", ") + ".");
+      if (new Date(details.dateTo) < new Date(details.dateFrom)) return err(res, 422, "BAD_DATES", "The travel end date is before the start date.");
+    }
+
     let stages = certType.stages.slice();
     if (certType.warden_conditional && student.residency === "HOSTELLER") {
       stages = stages.concat(["WARDEN"]);
@@ -401,11 +530,12 @@ app.post("/api/applications", requireAuth, requireRole("student", "super_admin")
     const insertRes = await client.query(
       `INSERT INTO applications
         (application_code, student_user_id, student_name, student_sdmis_id, program, school_dept, school_id, residency,
-         cert_type_id, stages, current_stage_index, purpose_note, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,'IN_PROGRESS')
+         cert_type_id, stages, current_stage_index, purpose_note, status, batch, request_details)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,'IN_PROGRESS',$12,$13::jsonb)
        RETURNING *`,
       [code, student.user_id, student.name, student.student_sdmis_id || student.username, student.program,
-       student.school_dept, student.school_id, student.residency, certType.cert_type_id, JSON.stringify(stages), purposeNote || null]
+       student.school_dept, student.school_id, student.residency, certType.cert_type_id, JSON.stringify(stages), purposeNote || null,
+       student.batch || null, JSON.stringify(details)]
     );
     const application = insertRes.rows[0];
 
@@ -547,6 +677,117 @@ app.patch("/api/department/applications/:id/certificate-draft", requireAuth, asy
   }
 });
 
+// ============================================================
+// RICH-TEXT CERTIFICATE EDITOR — any non-student login
+// ============================================================
+// The editor opens on the fully rendered certificate (every blank that has a
+// backend source already filled; the rest highlighted). Edits are saved as HTML
+// in applications.certificate_html and are what the Registrar finally issues.
+const EDITABLE_STATUSES = ["IN_PROGRESS", "DOCS_REQUESTED", "RETURNED_TO_DEPARTMENT"];
+
+async function loadEditableApplication(client, req, res) {
+  if (req.auth.role === "student") { err(res, 403, "FORBIDDEN", "Students cannot open the certificate editor."); return null; }
+  const { rows } = await client.query("SELECT * FROM applications WHERE application_id = $1", [req.params.id]);
+  const application = rows[0];
+  if (!application) { err(res, 404, "APPLICATION_NOT_FOUND", "No application exists with the given ID."); return null; }
+  if (!(await canTouchApplication(req, application))) { err(res, 403, "FORBIDDEN", "This application belongs to another school."); return null; }
+  return application;
+}
+
+app.get("/api/applications/:id/certificate-editor", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const application = await loadEditableApplication(client, req, res);
+    if (!application) return;
+    const saved = !!application.certificate_html;
+    const html = sanitizeCertificateHtml(saved ? application.certificate_html : await renderDraftCertificateHtml(client, application));
+    const label = (await client.query("SELECT label FROM certificate_types WHERE cert_type_id = $1", [application.cert_type_id])).rows[0];
+    res.json({
+      applicationId: application.application_id,
+      applicationCode: application.application_code,
+      studentName: application.student_name,
+      certTypeLabel: label ? label.label : "",
+      status: application.status,
+      html,
+      saved,
+      updatedAt: application.certificate_html_updated_at,
+      editable: EDITABLE_STATUSES.indexOf(application.status) !== -1,
+      unresolved: findUnresolvedBlanks(html)
+    });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Could not open the certificate editor.");
+  } finally {
+    client.release();
+  }
+});
+
+app.put("/api/applications/:id/certificate-html", requireAuth, async (req, res) => {
+  const { html, basedOn, force } = req.body || {};
+  if (typeof html !== "string" || !html.trim()) return err(res, 422, "MISSING_HTML", "Provide the certificate html.");
+  const client = await pool.connect();
+  try {
+    const application = await loadEditableApplication(client, req, res);
+    if (!application) return;
+    if (EDITABLE_STATUSES.indexOf(application.status) === -1) {
+      return err(res, 409, "NOT_EDITABLE", "This application is " + application.status + " and can no longer be edited.");
+    }
+    // Optimistic concurrency: several roles can edit the same certificate as it moves along.
+    const serverStamp = application.certificate_html_updated_at ? new Date(application.certificate_html_updated_at).getTime() : null;
+    const clientStamp = basedOn ? new Date(basedOn).getTime() : null;
+    if (!force && serverStamp !== null && serverStamp !== clientStamp) {
+      const who = application.certificate_html_updated_by
+        ? (await client.query("SELECT name FROM users WHERE user_id = $1", [application.certificate_html_updated_by])).rows[0] : null;
+      return err(res, 409, "EDIT_CONFLICT", "This certificate was saved by " + (who ? who.name : "someone else") +
+        " after you opened it. Reload to see their changes, or save again to overwrite them.");
+    }
+    let clean;
+    try { clean = sanitizeCertificateHtml(html); }
+    catch (e) { if (e.code === "TOO_LARGE") return err(res, 413, "TOO_LARGE", e.message); throw e; }
+    const up = await client.query(
+      "UPDATE applications SET certificate_html = $1, certificate_html_updated_by = $2, certificate_html_updated_at = now() WHERE application_id = $3 RETURNING certificate_html_updated_at",
+      [clean, req.auth.userId, application.application_id]
+    );
+    await client.query(
+      "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'EDITED',$5)",
+      [application.application_id, req.auth.userId, req.auth.name, req.auth.role, "Edited the certificate text in the rich-text editor"]
+    );
+    res.json({ ok: true, updatedAt: up.rows[0].certificate_html_updated_at, unresolved: findUnresolvedBlanks(clean) });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Could not save the certificate.");
+  } finally {
+    client.release();
+  }
+});
+
+// Throw away manual edits and regenerate from the templates + current backend data.
+app.post("/api/applications/:id/certificate-html/reset", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const application = await loadEditableApplication(client, req, res);
+    if (!application) return;
+    if (EDITABLE_STATUSES.indexOf(application.status) === -1) {
+      return err(res, 409, "NOT_EDITABLE", "This application is " + application.status + " and can no longer be edited.");
+    }
+    await client.query(
+      "UPDATE applications SET certificate_html = NULL, certificate_html_updated_by = NULL, certificate_html_updated_at = NULL WHERE application_id = $1",
+      [application.application_id]
+    );
+    await client.query(
+      "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'EDITED',$5)",
+      [application.application_id, req.auth.userId, req.auth.name, req.auth.role, "Reset the certificate text to the generated version"]
+    );
+    const html = sanitizeCertificateHtml(await renderDraftCertificateHtml(client, application));
+    res.json({ html, saved: false, updatedAt: null, unresolved: findUnresolvedBlanks(html) });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Could not reset the certificate.");
+  } finally {
+    client.release();
+  }
+});
+
 // Student resubmits after a DOCS_REQUESTED response
 app.post("/api/applications/:id/resubmit", requireAuth, requireRole("student", "super_admin"), async (req, res) => {
   const { documentAttached } = req.body || {};
@@ -576,7 +817,7 @@ app.post("/api/applications/:id/resubmit", requireAuth, requireRole("student", "
 });
 
 // ============================================================
-// DEPARTMENT DESKS (School / Exam / Fees & Fin. Aid / Admission / Warden)
+// DEPARTMENT DESKS (School / Exam / Fees / Financial Aid / Admission / Warden)
 // ============================================================
 app.get("/api/department/queue", requireAuth, async (req, res) => {
   let dept = null;
@@ -589,7 +830,7 @@ app.get("/api/department/queue", requireAuth, async (req, res) => {
     }
   } else if (req.auth.role === "super_admin") {
     dept = req.query.dept;
-    if (!dept) return err(res, 400, "MISSING_DEPT", "Pass ?dept=SCHOOL|EXAM|FEES_FINAID|ADMISSION|WARDEN for Super Admin.");
+    if (!dept) return err(res, 400, "MISSING_DEPT", "Pass ?dept=SCHOOL|EXAM|FEES|FINAID|ADMISSION|WARDEN for Super Admin.");
     if (dept === "SCHOOL" && req.query.schoolId) schoolFilter = req.query.schoolId;
   } else {
     return err(res, 403, "FORBIDDEN", "Your role does not have a department queue.");
@@ -797,6 +1038,10 @@ app.post("/api/registrar/applications/:id/return", requireAuth, requireRole("reg
 app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
   const { signatureImageBase64, sealImageBase64, signaturePosition, sealPosition } = req.body || {};
   if (!signatureImageBase64) return err(res, 422, "SIGNATURE_REQUIRED", "A signature image is required to issue the certificate.");
+  const IMG_DATA_URL = /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/;
+  if (!IMG_DATA_URL.test(signatureImageBase64) || (sealImageBase64 && !IMG_DATA_URL.test(sealImageBase64))) {
+    return err(res, 422, "BAD_IMAGE", "Signature and seal must be PNG or JPEG images.");
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -813,20 +1058,39 @@ app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requir
       return err(res, 409, "NOT_READY", "This application has not cleared all department stages yet.");
     }
 
+    // What gets issued is exactly what the editor holds (or, if nobody edited,
+    // the freshly rendered template). Refuse to issue with highlighted blanks
+    // still showing — a half-filled certificate must never leave the building.
+    const workingHtml = sanitizeCertificateHtml(application.certificate_html || await renderDraftCertificateHtml(client, application));
+    const unresolved = findUnresolvedBlanks(workingHtml);
+    if (unresolved.length) {
+      await client.query("ROLLBACK");
+      return res.status(422).json({ error: {
+        code: "UNRESOLVED_FIELDS",
+        message: "Fill these highlighted fields in the certificate editor before issuing: " + unresolved.map((u) => u.label).join("; ") + ".",
+        fields: unresolved
+      } });
+    }
+
     const seq = await client.query("SELECT nextval('certificate_number_seq') AS n");
     const certNumber = "UNIV/BC/" + new Date().getFullYear() + "/" + String(seq.rows[0].n).padStart(6, "0");
     const qrToken = crypto.randomBytes(8).toString("hex");
+    const sigPos = signaturePosition || { top: 78, left: 8 };
+    const sealPos = sealPosition || { top: 70, left: 60 };
+    const finalHtml = finalizeHtml(workingHtml, {
+      certNo: certNumber, issuedAt: new Date(), qrToken,
+      signatureData: signatureImageBase64, sealData: sealImageBase64 || null,
+      signaturePosition: sigPos, sealPosition: sealPos
+    });
 
     const certRes = await client.query(
       `INSERT INTO certificates
         (application_id, certificate_number, cert_type_id, qr_verification_token, issued_by_user_id,
-         registrar_signature_data, registrar_seal_data, signature_position, seal_position,
+         registrar_signature_data, registrar_seal_data, signature_position, seal_position, final_html,
          signed_at, notified_at, notification_channel)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now(),'EMAIL') RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now(),'EMAIL') RETURNING *`,
       [application.application_id, certNumber, application.cert_type_id, qrToken, req.auth.userId, signatureImageBase64,
-       sealImageBase64 || null,
-       JSON.stringify(signaturePosition || { top: 78, left: 8 }),
-       JSON.stringify(sealPosition || { top: 70, left: 60 })]
+       sealImageBase64 || null, JSON.stringify(sigPos), JSON.stringify(sealPos), finalHtml]
     );
     const cert = certRes.rows[0];
 
@@ -840,13 +1104,7 @@ app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requir
     );
     await client.query("COMMIT");
 
-    const draft = application.certificate_draft || defaultCertificateDraft(application, application.fee_snapshot || { fees: [] });
-    const mergedApp = Object.assign({}, application, {
-      student_name: draft.studentName || application.student_name,
-      program: draft.programName || application.program,
-      residency: draft.residency || application.residency
-    });
-    const html = renderCertificateHtml(mergedApp, cert);
+    const html = finalHtml;
 
     // Notification hook is real; only the email transport is a stub — no
     // SMTP provider connected yet (see README "known gaps").
@@ -900,7 +1158,7 @@ app.get("/api/registrar/certificates/:id/render", requireAuth, requireRole("regi
   );
   const row = rows[0];
   if (!row) return err(res, 404, "CERTIFICATE_NOT_FOUND", "No certificate exists with the given ID.");
-  const html = renderCertificateHtml(row, row);
+  const html = await renderIssuedCertificateHtml(pool, row);
   res.json({ html, registrarSignatureData: row.registrar_signature_data });
 });
 
@@ -974,7 +1232,26 @@ app.post("/api/users", requireAuth, requireRole("super_admin"), async (req, res)
   }
 });
 
+// Certificate-relevant profile data for one student (what fills the template blanks).
+app.get("/api/users/:id/profile", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { rows } = await pool.query("SELECT user_id, name, username, batch, program, role_code, profile_data FROM users WHERE user_id = $1", [req.params.id]);
+  if (!rows[0]) return err(res, 404, "USER_NOT_FOUND", "No user exists with the given ID.");
+  res.json(rows[0]);
+});
+
 app.patch("/api/users/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { profileData } = req.body || {};
+  if (profileData !== undefined) {
+    // Merging student profile data is not a role/active change, so it is allowed on any account.
+    const prof = extractProfile(profileData || {});
+    if (prof.warnings.length) return err(res, 422, "BAD_PROFILE", prof.warnings.join("; "));
+    const { rows } = await pool.query(
+      "UPDATE users SET profile_data = COALESCE(profile_data, '{}'::jsonb) || $1::jsonb WHERE user_id = $2 AND role_code = 'student' RETURNING user_id, username, name, profile_data",
+      [JSON.stringify(prof.profile), req.params.id]
+    );
+    if (!rows[0]) return err(res, 404, "USER_NOT_FOUND", "No student exists with the given ID.");
+    return res.json(rows[0]);
+  }
   if (req.params.id === req.auth.userId) {
     return err(res, 409, "CANNOT_MODIFY_SELF", "You cannot change your own role or active status.");
   }
@@ -1050,7 +1327,10 @@ app.post("/api/admin/students/bulk-import-excel", requireAuth, requireRole("supe
     return err(res, 422, "UNREADABLE_FILE", "Could not read that file as an Excel spreadsheet.");
   }
   const keyMap = { email: "email", name: "name", studentsdmisid: "studentSdmisId", studentid: "studentSdmisId",
-    program: "program", schooldept: "schoolDept", school: "schoolDept", residency: "residency" };
+    program: "program", programme: "program", schooldept: "schoolDept", school: "schoolDept", residency: "residency", batch: "batch" };
+  // every certificate profile column (gender, cgpa, abc_id, address, ...) is accepted too,
+  // under its snake_case or camelCase name, e.g. "ABC ID", "abc_id" or "abcId".
+  PROFILE_KEYS.forEach((k) => { keyMap[k.replace(/_/g, "")] = k; });
   const students = rows.map((row) => {
     const out = {};
     Object.keys(row).forEach((k) => {
@@ -1077,8 +1357,18 @@ app.post("/api/admin/students/bulk-import-excel", requireAuth, requireRole("supe
 // SCHOOLS & PROGRAMMES
 // ============================================================
 app.get("/api/programmes", requireAuth, async (req, res) => {
-  const { rows } = await pool.query("SELECT programme_id, name FROM programmes ORDER BY sort_order, name");
+  const { rows } = await pool.query("SELECT programme_id, name, duration_years FROM programmes ORDER BY sort_order, name");
   res.json(rows);
+});
+
+// Programme length (years) drives "(08/10) semesters" and "(four/five)-year" on the certificates.
+app.patch("/api/programmes/:id", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { durationYears } = req.body || {};
+  const n = durationYears === null ? null : Number(durationYears);
+  if (n !== null && (!Number.isInteger(n) || n < 1 || n > 6)) return err(res, 422, "BAD_DURATION", "durationYears must be a whole number from 1 to 6 (or null to clear).");
+  const { rows } = await pool.query("UPDATE programmes SET duration_years = $1 WHERE programme_id = $2 RETURNING programme_id, name, duration_years", [n, req.params.id]);
+  if (!rows[0]) return err(res, 404, "PROGRAMME_NOT_FOUND", "No programme exists with the given ID.");
+  res.json(rows[0]);
 });
 
 async function validateProgrammeNames(candidates) {
@@ -1142,9 +1432,18 @@ app.get("/api/settings", requireAuth, async (req, res) => {
   res.json(out);
 });
 
+// Bank details / contact e-mails / CGPA scale printed on certificates (Super Admin only).
+app.get("/api/settings/certificate", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { rows } = await pool.query("SELECT setting_key, setting_value FROM app_settings WHERE setting_key = ANY($1)", [CERT_SETTING_KEYS]);
+  const out = {};
+  CERT_SETTING_KEYS.forEach((k) => { out[k] = null; });
+  rows.forEach((r) => { out[r.setting_key] = r.setting_value; });
+  res.json(out);
+});
+
 app.put("/api/settings/:key", requireAuth, requireRole("super_admin"), async (req, res) => {
   const key = req.params.key;
-  if (PUBLIC_SETTING_KEYS.indexOf(key) === -1) return err(res, 400, "UNKNOWN_SETTING", "Not a recognized setting key.");
+  if (PUBLIC_SETTING_KEYS.indexOf(key) === -1 && CERT_SETTING_KEYS.indexOf(key) === -1) return err(res, 400, "UNKNOWN_SETTING", "Not a recognized setting key.");
   const { value } = req.body || {};
   await pool.query(
     `INSERT INTO app_settings (setting_key, setting_value, updated_by, updated_at) VALUES ($1,$2,$3,now())
@@ -1162,7 +1461,7 @@ async function fetchConsolidatedApplications(schoolId) {
   let clause = "";
   if (schoolId) { params.push(schoolId); clause = "WHERE a.school_id = $1"; }
   const { rows } = await pool.query(
-    `SELECT a.application_code, a.student_name, a.student_sdmis_id, a.program, a.school_dept, a.status,
+    `SELECT a.application_id, a.application_code, a.student_name, a.student_sdmis_id, a.program, a.school_dept, a.status,
             a.current_stage_index, a.stages, a.created_at, a.updated_at,
             ct.label AS cert_type_label, c.certificate_number, c.issued_at
      FROM applications a
@@ -1256,7 +1555,7 @@ app.get("/api/applications/:id/certificate", requireAuth, async (req, res) => {
   if (req.auth.role === "student" && row.student_user_id !== req.auth.userId) {
     return err(res, 403, "FORBIDDEN", "You can only download your own certificates.");
   }
-  const html = renderCertificateHtml(row, row);
+  const html = await renderIssuedCertificateHtml(pool, row);
   res.json({
     html,
     certificateNumber: row.certificate_number,
@@ -1265,6 +1564,34 @@ app.get("/api/applications/:id/certificate", requireAuth, async (req, res) => {
     registrarSealData: row.registrar_seal_data,
     signaturePosition: row.signature_position,
     sealPosition: row.seal_position
+  });
+});
+
+// ============================================================
+// TEMPLATE FIELD AUDIT — every blank on every template and where it comes from
+// ============================================================
+// Computed from the real renderers, so it cannot drift from the templates.
+// Pass ?applicationId=... to also see which of them resolve for that application.
+app.get("/api/admin/certificate-fields", requireAuth, requireRole("super_admin"), async (req, res) => {
+  let resolved = null;
+  if (req.query.applicationId) {
+    const { rows } = await pool.query("SELECT * FROM applications WHERE application_id = $1", [req.query.applicationId]);
+    if (!rows[0]) return err(res, 404, "APPLICATION_NOT_FOUND", "No application exists with the given ID.");
+    resolved = (await loadCertificateValues(pool, rows[0])).values;
+  }
+  const types = await pool.query("SELECT code, label FROM certificate_types ORDER BY cert_type_id");
+  const describe = (key) => {
+    const f = BY_KEY[key];
+    const row = { key, label: f.label, kind: f.kind, source: f.source };
+    if (resolved) row.resolved = !!resolved[key];
+    return row;
+  };
+  res.json({
+    certificateTypes: types.rows
+      .filter((t) => RENDERER_CODES.indexOf(t.code) !== -1)
+      .map((t) => ({ code: t.code, label: t.label, fields: fieldsUsedBy(t.code).map(describe) })),
+    profileKeys: PROFILE_KEYS,
+    settingKeys: CERT_SETTING_KEYS
   });
 });
 

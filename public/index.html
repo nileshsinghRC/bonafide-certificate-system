@@ -136,6 +136,21 @@
   .reg-table th{text-align:left;padding:8px 10px;background:var(--slate-bg);color:var(--slate);font-size:11px;text-transform:uppercase;letter-spacing:0.03em;border-bottom:1px solid var(--line);}
   .reg-table td{padding:8px 10px;border-bottom:1px solid var(--line);}
   .reg-table tr:hover td{background:var(--parchment);}
+  .cert-body mark.blank{background:#FFF176;outline:1px dashed #C9A400;}
+  .cert-body table.adept-table{border-collapse:collapse;margin:0 0 10px;} .cert-body table.adept-table td,.cert-body table.adept-table th{border:1px solid #999;padding:3px 10px;text-align:left;}
+  .cert-body .sig-token{display:inline-block;min-width:110px;min-height:24px;border:1px dashed #9aa;color:#889;font-size:11px;padding:2px 6px;}
+  /* rich-text editor */
+  #editor-overlay{z-index:60;}
+  .editor-modal{background:var(--parchment-raised);border:1px solid var(--line);border-radius:6px;width:100%;max-width:860px;max-height:94vh;display:flex;flex-direction:column;}
+  .editor-head{padding:14px 18px 8px;} .editor-head h3{font-family:var(--font-display);font-weight:500;font-size:18px;margin:0;} .editor-head .sub{font-size:12px;color:var(--slate);margin-top:2px;}
+  .editor-toolbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;}
+  .editor-toolbar button,.editor-toolbar select{height:30px;min-width:30px;padding:0 8px;border:1px solid var(--line);background:var(--parchment-raised);border-radius:3px;cursor:pointer;font-size:13px;width:auto;margin:0;}
+  .editor-toolbar button:hover{background:var(--gold-soft);} .editor-toolbar .sep{width:1px;height:22px;background:var(--line);margin:0 4px;}
+  .editor-toolbar input[type=color]{width:30px;height:30px;padding:1px;border:1px solid var(--line);border-radius:3px;background:none;cursor:pointer;margin:0;}
+  .editor-scroll{overflow-y:auto;padding:14px 18px;background:#E9E6DD;flex:1;}
+  #editor-page{outline:none;} #editor-page:focus-within{box-shadow:0 0 0 2px var(--gold);}
+  .editor-foot{padding:10px 18px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  #editor-unresolved{font-size:12.5px;flex:1;min-width:200px;} #editor-unresolved.bad{color:var(--brick);} #editor-unresolved.good{color:var(--sage);}
   @media print{
     @page{ size: A4; margin: 0; }
     html, body{ height: auto !important; }
@@ -263,6 +278,16 @@
               <span>The student has signed and attached the MYSY undertaking (see template pack)</span>
             </label>
           </div>
+          <div id="visa-field" style="display:none;margin-top:10px;">
+            <p class="label">Travel details (printed on the certificate)</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div><p class="label">Country</p><input type="text" id="visa-country"></div>
+              <div><p class="label">Programme / event name</p><input type="text" id="visa-event"></div>
+              <div><p class="label">From</p><input type="date" id="visa-from"></div>
+              <div><p class="label">To</p><input type="date" id="visa-to"></div>
+              <div><p class="label">Funding</p><select id="visa-sponsorship"><option value="">Choose…</option><option value="SPONSORED">Sponsored</option><option value="NON_SPONSORED">Non-Sponsored</option></select></div>
+            </div>
+          </div>
           <p class="label" style="margin-top:14px;">Purpose note (optional)</p>
           <textarea id="purpose-note"></textarea>
           <button class="btn maroon" id="submit-app" style="margin-top:14px;width:100%;">Submit application</button>
@@ -373,6 +398,58 @@
     </div>
 
     <div class="panel">
+      <p class="label">Certificate data — fills the blanks on the certificates</p>
+      <p class="section-sub" style="margin-bottom:10px;">Everything a certificate prints that isn't already on the application. Anything left empty shows as a highlighted blank in the certificate editor, and the Registrar cannot issue until it is filled.</p>
+
+      <p class="label" style="margin-top:6px;">Student record details</p>
+      <select id="cd-student" style="margin-bottom:8px;"></select>
+      <div id="cd-student-form" style="display:none;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><p class="label">Gender</p><select id="cd-gender"><option value="">—</option><option value="M">Male (Mr./He)</option><option value="F">Female (Ms./She)</option></select></div>
+          <div><p class="label">Current semester (1–12)</p><input type="text" id="cd-current_semester"></div>
+          <div><p class="label">Last completed semester (1–12)</p><input type="text" id="cd-completed_semester"></div>
+          <div><p class="label">Admission (Month/Year)</p><input type="text" id="cd-admission_month_year" placeholder="August 2023"></div>
+          <div><p class="label">Academic year of admission</p><input type="text" id="cd-admission_academic_year" placeholder="2023-24"></div>
+          <div><p class="label">Admitted through</p><input type="text" id="cd-admission_route" placeholder="NATA / ACPC / ADEPT"></div>
+          <div><p class="label">Completion (Month/Year)</p><input type="text" id="cd-completion_month_year"></div>
+          <div><p class="label">Year of completion</p><input type="text" id="cd-completion_year"></div>
+          <div><p class="label">CGPA</p><input type="text" id="cd-cgpa"></div>
+          <div><p class="label">CGPA out of</p><input type="text" id="cd-cgpa_scale" placeholder="10"></div>
+          <div><p class="label">ABC / NAD / APAAR ID</p><input type="text" id="cd-abc_id"></div>
+          <div><p class="label">Foundation batch (joining year)</p><input type="text" id="cd-foundation_batch" placeholder="2023-24"></div>
+          <div><p class="label">Hostel since (Month/Year)</p><input type="text" id="cd-hostel_since"></div>
+          <div><p class="label">Financial aid % on tuition</p><input type="text" id="cd-financial_aid_percent" placeholder="25"></div>
+        </div>
+        <p class="label" style="margin-top:8px;">Current address</p><textarea id="cd-address" style="min-height:54px;"></textarea>
+        <p class="label" style="margin-top:8px;">ADEPT scores (JSON like {"Drawing":"72"} or plain text)</p><textarea id="cd-adept_scores" style="min-height:54px;"></textarea>
+        <button class="btn small" id="cd-student-save" style="margin-top:10px;">Save student details</button>
+        <span id="cd-student-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-left:8px;">&#10003; Saved</span>
+      </div>
+
+      <p class="label" style="margin-top:18px;">Programme length (years)</p>
+      <div id="cd-programmes"></div>
+
+      <p class="label" style="margin-top:18px;">University constants</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><p class="label">Bank account number</p><input type="text" id="cs-bank_account_number"></div>
+        <div><p class="label">IFSC code</p><input type="text" id="cs-bank_ifsc"></div>
+        <div><p class="label">Bank</p><input type="text" id="cs-bank_name" placeholder="Axis Bank"></div>
+        <div><p class="label">Branch</p><input type="text" id="cs-bank_branch" placeholder="Bopal, Ahmedabad"></div>
+        <div><p class="label">Branch code</p><input type="text" id="cs-bank_branch_code" placeholder="878"></div>
+        <div><p class="label">CGPA scale (default)</p><input type="text" id="cs-cgpa_scale" placeholder="10"></div>
+        <div><p class="label">MYSY notification e-mail</p><input type="text" id="cs-mysy_notify_email"></div>
+        <div><p class="label">Registry e-mail (cc)</p><input type="text" id="cs-registry_email"></div>
+      </div>
+      <button class="btn small" id="cs-save" style="margin-top:10px;">Save constants</button>
+      <span id="cs-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-left:8px;">&#10003; Saved</span>
+
+      <p class="label" style="margin-top:18px;">Field audit</p>
+      <p class="section-sub" style="margin-bottom:6px;">Every blank on every certificate template and where its value comes from.</p>
+      <button class="btn ghost small" id="cd-audit-btn">Show field audit</button>
+      <div class="import-result" id="cd-audit"></div>
+    </div>
+
+    <div class="panel">
       <p class="label">Branding &amp; theme</p>
       <p class="section-sub" style="margin-bottom:8px;">Replace the university logo shown in the header, and choose a colour theme for the whole portal.</p>
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;">
@@ -449,38 +526,12 @@
   </div>
 </div>
 
-<div class="overlay" id="draft-overlay">
-  <div class="modal" style="max-width:520px;">
-    <h3>Certificate preview</h3>
-    <p class="label">Student name</p><input type="text" id="draft-studentName">
-    <p class="label" style="margin-top:8px;">Programme</p><input type="text" id="draft-programName">
-    <p class="label" style="margin-top:8px;">School / Department</p><input type="text" id="draft-schoolDept">
-    <p class="label" style="margin-top:8px;">Residency</p><input type="text" id="draft-residency">
-    <p class="label" style="margin-top:8px;">Purpose note</p><textarea id="draft-purposeNote"></textarea>
-    <p class="label" style="margin-top:8px;">Tuition fee (in words)</p><input type="text" id="draft-tuitionFeeInWords">
-    <p class="label" style="margin-top:8px;">Hostel fee (in words)</p><input type="text" id="draft-hostelFeeInWords">
-    <div class="modal-actions">
-      <span id="draft-save-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-right:auto;">✓ Saved</span>
-      <button class="btn ghost small" id="draft-cancel">Close</button>
-      <button class="btn maroon small" id="draft-save">Save changes</button>
-    </div>
-  </div>
-</div>
-
 <div class="overlay" id="issue-overlay">
   <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto;">
     <h3>Review &amp; issue certificate</h3>
-    <p class="section-sub" style="margin-bottom:8px;">These fields print on the certificate — edit and save before signing if anything needs correcting.</p>
-    <p class="label">Student name</p><input type="text" id="issue-studentName">
-    <p class="label" style="margin-top:8px;">Programme</p><input type="text" id="issue-programName">
-    <p class="label" style="margin-top:8px;">School / Department</p><input type="text" id="issue-schoolDept">
-    <p class="label" style="margin-top:8px;">Residency</p><input type="text" id="issue-residency">
-    <p class="label" style="margin-top:8px;">Tuition fee (in words)</p><input type="text" id="issue-tuitionFeeInWords">
-    <p class="label" style="margin-top:8px;">Hostel fee (in words)</p><input type="text" id="issue-hostelFeeInWords">
-    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
-      <button class="btn ghost small" id="issue-save-draft">Save changes</button>
-      <span id="issue-save-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;">✓ Saved</span>
-    </div>
+    <p class="section-sub" style="margin-bottom:8px;" id="issue-summary"></p>
+    <button class="btn small" id="issue-open-editor">Open certificate editor</button>
+    <p class="section-sub" style="margin:6px 0 0;">Check and edit the wording first — the certificate is issued exactly as it appears in the editor.</p>
 
     <p class="label" style="margin-top:14px;">Upload Registrar's signature (PNG/JPEG)</p>
     <input type="file" id="issue-signature-file" accept="image/png,image/jpeg">
@@ -505,6 +556,45 @@
   </div>
 </div>
 
+<div class="overlay" id="editor-overlay">
+  <div class="editor-modal">
+    <div class="editor-head">
+      <h3 id="editor-title">Certificate editor</h3>
+      <div class="sub" id="editor-sub"></div>
+    </div>
+    <div class="editor-toolbar" id="editor-toolbar">
+      <button data-cmd="undo" title="Undo">&#8630;</button><button data-cmd="redo" title="Redo">&#8631;</button>
+      <span class="sep"></span>
+      <select id="editor-fontname" title="Font"><option value="">Font</option><option>Arial</option><option>Georgia</option><option>Times New Roman</option><option>Calibri</option><option>Verdana</option></select>
+      <select id="editor-fontsize" title="Font size"><option value="">Size</option><option value="1">Small</option><option value="2">Compact</option><option value="3">Normal</option><option value="4">Large</option><option value="5">Larger</option><option value="6">Huge</option></select>
+      <span class="sep"></span>
+      <button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button><button data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button><button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+      <span class="sep"></span>
+      <input type="color" id="editor-color" value="#111111" title="Text colour"><input type="color" id="editor-hilite" value="#ffff00" title="Highlight colour">
+      <span class="sep"></span>
+      <button data-cmd="justifyLeft" title="Align left">&#8676;</button><button data-cmd="justifyCenter" title="Centre">&#8596;</button><button data-cmd="justifyRight" title="Align right">&#8677;</button><button data-cmd="justifyFull" title="Justify">&#9776;</button>
+      <span class="sep"></span>
+      <button data-cmd="insertUnorderedList" title="Bullets">&bull;&#8801;</button><button data-cmd="insertOrderedList" title="Numbering">1.&#8801;</button><button data-cmd="outdent" title="Decrease indent">&#8676;&#8801;</button><button data-cmd="indent" title="Increase indent">&#8677;&#8801;</button>
+      <span class="sep"></span>
+      <button data-cmd="removeFormat" title="Clear formatting">T&#8203;<sub>x</sub></button>
+    </div>
+    <div class="editor-scroll">
+      <div class="cert-wrap">
+        <img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">
+        <div class="cert-body" id="editor-page" contenteditable="true" spellcheck="true"></div>
+        <img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">
+      </div>
+    </div>
+    <div class="editor-foot">
+      <div id="editor-unresolved"></div>
+      <span id="editor-save-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;">&#10003; Saved</span>
+      <button class="btn ghost small" id="editor-reset" title="Discard manual edits and regenerate from the template">Reset to generated</button>
+      <button class="btn ghost small" id="editor-close">Close</button>
+      <button class="btn maroon small" id="editor-save">Save changes</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="cert-viewer-overlay">
   <div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto;">
     <h3>Your certificate</h3>
@@ -523,14 +613,15 @@
   var TOKEN_KEY = "bcis_token";
   var STATE = { user: null, certTypes: [], applications: [], deptQueue: [], deptCode: null, track: "active", pendingAction: null, selectedCat: null, docAttached: false };
 
-  var STAGE_TO_ROLE = { SCHOOL:"school_admin", EXAM:"exam_admin", FEES_FINAID:"fees_finaid_admin", ADMISSION:"admission_admin", WARDEN:"warden" };
-  var DEPT_LABEL = { SCHOOL:"School's Office", EXAM:"Exam Office", FEES_FINAID:"Fees & Financial Aid Dept", ADMISSION:"Admission Office", WARDEN:"Warden" };
-  var ROLE_LABEL = { student:"Student", school_admin:"School's Office", exam_admin:"Exam Office", fees_finaid_admin:"Fees & Financial Aid Dept", admission_admin:"Admission Office", warden:"Warden", registrar_admin:"Registrar's Office", super_admin:"Super Admin" };
+  var STAGE_TO_ROLE = { SCHOOL:"school_admin", EXAM:"exam_admin", FEES:"fees_admin", FINAID:"finaid_admin", ADMISSION:"admission_admin", WARDEN:"warden" };
+  var DEPT_LABEL = { SCHOOL:"School's Office", EXAM:"Exam Office", FEES:"Fees Dept", FINAID:"Financial Aid Dept", ADMISSION:"Admission Office", WARDEN:"Warden" };
+  var ROLE_LABEL = { student:"Student", school_admin:"School's Office", exam_admin:"Exam Office", fees_admin:"Fees Dept", finaid_admin:"Financial Aid Dept", admission_admin:"Admission Office", warden:"Warden", registrar_admin:"Registrar's Office", super_admin:"Super Admin" };
 
   var DEMO_ACCOUNTS = [
     {u:"priya.desai", p:"admin123", n:"Priya Desai", r:"School's Office"},
     {u:"karan.bose", p:"admin123", n:"Karan Bose", r:"Exam Office"},
-    {u:"meera.iyer", p:"admin123", n:"Meera Iyer", r:"Fees & Financial Aid Dept"},
+    {u:"meera.iyer", p:"admin123", n:"Meera Iyer", r:"Fees Dept"},
+    {u:"rohan.pillai", p:"admin123", n:"Rohan Pillai", r:"Financial Aid Dept"},
     {u:"arjun.rao", p:"admin123", n:"Arjun Rao", r:"Admission Office"},
     {u:"sunita.varma", p:"admin123", n:"Sunita Varma", r:"Warden"},
     {u:"fatima.qureshi", p:"admin123", n:"Fatima Qureshi", r:"Registrar's Office"},
@@ -751,7 +842,8 @@
     student: [{screen:"student", label:"My applications"}],
     school_admin: [{screen:"department", label:"Processing desk"},{screen:"all-apps", label:"All applications"}],
     exam_admin: [{screen:"department", label:"Processing desk"}],
-    fees_finaid_admin: [{screen:"department", label:"Processing desk"}],
+    fees_admin: [{screen:"department", label:"Processing desk"}],
+    finaid_admin: [{screen:"department", label:"Processing desk"}],
     admission_admin: [{screen:"department", label:"Processing desk"}],
     warden: [{screen:"department", label:"Processing desk"}],
     registrar_admin: [{screen:"registrar", label:"Registrar"},{screen:"all-apps", label:"All applications"}],
@@ -847,6 +939,7 @@
         b.classList.add("selected");
         document.getElementById("doc-field").style.display = c.requires_document ? "block" : "none";
         document.getElementById("undertaking-field").style.display = c.requires_undertaking ? "block" : "none";
+        document.getElementById("visa-field").style.display = c.code === "VISA_GENERAL" ? "block" : "none";
       });
       grid.appendChild(b);
     });
@@ -863,7 +956,16 @@
     var undertakingOk = document.getElementById("undertaking-check").checked;
     if(c.requires_undertaking && !undertakingOk){ alert("Confirm the signed undertaking is attached."); return; }
 
+    var requestDetails;
+    if(c.code === "VISA_GENERAL"){
+      requestDetails = { country: document.getElementById("visa-country").value, eventName: document.getElementById("visa-event").value,
+        dateFrom: document.getElementById("visa-from").value, dateTo: document.getElementById("visa-to").value, sponsorship: document.getElementById("visa-sponsorship").value };
+      if(!requestDetails.country.trim() || !requestDetails.eventName.trim() || !requestDetails.dateFrom || !requestDetails.dateTo || !requestDetails.sponsorship){
+        alert("Fill in the country, programme/event name, travel dates and funding for the VISA certificate."); return;
+      }
+    }
     api("/api/applications", {method:"POST", body: JSON.stringify({
+      requestDetails: requestDetails,
       certTypeCode: c.code,
       purposeNote: document.getElementById("purpose-note").value,
       documentAttached: c.requires_document ? "supporting-document.pdf" : null,
@@ -873,6 +975,8 @@
       document.querySelectorAll(".cat-card").forEach(function(x){x.classList.remove("selected");});
       document.getElementById("doc-field").style.display="none";
       document.getElementById("undertaking-field").style.display="none";
+      document.getElementById("visa-field").style.display="none";
+      ["visa-country","visa-event","visa-from","visa-to","visa-sponsorship"].forEach(function(id){ document.getElementById(id).value=""; });
       document.getElementById("upload-zone").classList.remove("has-file");
       document.getElementById("upload-zone").textContent="Click to attach a file";
       document.getElementById("purpose-note").value="";
@@ -998,7 +1102,7 @@
         var returnBanner = isReturned ? '<div class="return-banner"><strong>Returned by the Registrar</strong>'+escapeHtml(a.return_comment||"")+'</div>' : "";
         var actions = isReturned
           ? '<button class="btn maroon small" data-act="resubmit" data-id="'+a.application_id+'">Resubmit to Registrar</button>'
-          : '<button class="btn ghost small" data-act="preview" data-id="'+a.application_id+'">Preview &amp; edit certificate</button>'+
+          : '<button class="btn ghost small" data-act="preview" data-id="'+a.application_id+'">Edit certificate</button>'+
             '<button class="btn small" data-act="approve" data-id="'+a.application_id+'">Approve &amp; forward</button>'+
             '<button class="btn ghost small" data-act="request_docs" data-id="'+a.application_id+'">Request documents</button>'+
             '<button class="btn maroon small" data-act="reject" data-id="'+a.application_id+'">Reject</button>';
@@ -1016,7 +1120,7 @@
     if(action==="approve"){
       api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:"approve"})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
     } else if(action==="preview"){
-      openDraftEditor(id);
+      openCertificateEditor(id);
     } else if(action==="resubmit"){
       api("/api/department/applications/"+id+"/resubmit-to-registrar", {method:"POST"}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
     } else {
@@ -1039,7 +1143,7 @@
       STATE.allApps = rows;
       var thead = document.querySelector("#allapps-table thead");
       var tbody = document.querySelector("#allapps-table tbody");
-      var cols = ["Application","Student","Programme","School","Certificate Type","Status","Current Level","Certificate No.","Submitted"];
+      var cols = ["Application","Student","Programme","School","Certificate Type","Status","Current Level","Certificate No.","Submitted",""];
       thead.innerHTML = "<tr>" + cols.map(function(c){ return "<th>"+c+"</th>"; }).join("") + "</tr>";
       if(!rows.length){ tbody.innerHTML = '<tr><td colspan="'+cols.length+'" style="padding:20px;color:var(--slate);text-align:center;">No applications yet.</td></tr>'; return; }
       tbody.innerHTML = rows.map(function(r){
@@ -1053,10 +1157,15 @@
           "<td>"+escapeHtml(levelLabel(r.currentLevel))+"</td>"+
           "<td>"+escapeHtml(r.certificate_number||"—")+"</td>"+
           "<td>"+fmtDate(r.created_at)+"</td>"+
+          "<td class=\"no-print\">"+(["IN_PROGRESS","DOCS_REQUESTED","RETURNED_TO_DEPARTMENT"].indexOf(r.status)!==-1 ? '<button class="btn ghost small" data-edit-cert="'+r.application_id+'">Edit certificate</button>' : "")+"</td>"+
         "</tr>";
       }).join("");
     });
   }
+  document.querySelector("#allapps-table tbody").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-edit-cert]"); if(!b) return;
+    openCertificateEditor(b.dataset.editCert);
+  });
   document.getElementById("allapps-export-pdf").addEventListener("click", function(){ window.print(); });
   document.getElementById("allapps-export-xlsx").addEventListener("click", function(){
     var endpoint = (STATE.user.role === "school_admin") ? "/api/department/applications/export.xlsx" : "/api/registrar/applications/export.xlsx";
@@ -1070,41 +1179,107 @@
     });
   });
 
-  // ---------------- CERTIFICATE DRAFT EDITOR (Department) ----------------
-  var DRAFT_APP_ID = null;
-  function openDraftEditor(appId){
-    DRAFT_APP_ID = appId;
-    api("/api/applications/"+appId+"/certificate-preview").then(function(res){
-      var d = res.certificateDraft;
-      document.getElementById("draft-studentName").value = d.studentName || "";
-      document.getElementById("draft-programName").value = d.programName || "";
-      document.getElementById("draft-schoolDept").value = d.schoolDept || "";
-      document.getElementById("draft-residency").value = d.residency || "";
-      document.getElementById("draft-purposeNote").value = d.purposeNote || "";
-      document.getElementById("draft-tuitionFeeInWords").value = d.tuitionFeeInWords || "";
-      document.getElementById("draft-hostelFeeInWords").value = d.hostelFeeInWords || "";
-      document.getElementById("draft-overlay").classList.add("open");
-    }).catch(function(e){ alert(e.message); });
+  // ---------------- RICH-TEXT CERTIFICATE EDITOR (any non-student login) ----------------
+  var ED = { appId: null, basedOn: null, dirty: false, editable: true, onClose: null };
+  var edPage = function(){ return document.getElementById("editor-page"); };
+
+  function edUnresolvedNow(){
+    var out = [];
+    edPage().querySelectorAll("mark.blank").forEach(function(m){
+      var ph = (m.getAttribute("data-ph")||"").trim();
+      var txt = (m.textContent||"").replace(/\u00a0/g," ").trim();
+      if(txt === "" || txt === ph) out.push(m.getAttribute("title") ? m.getAttribute("title").split(" \u2014 ")[0] : (ph||"blank"));
+    });
+    return out;
   }
-  document.getElementById("draft-cancel").addEventListener("click", function(){ document.getElementById("draft-overlay").classList.remove("open"); });
-  document.getElementById("draft-save").addEventListener("click", function(){
-    var fields = {
-      studentName: document.getElementById("draft-studentName").value,
-      programName: document.getElementById("draft-programName").value,
-      schoolDept: document.getElementById("draft-schoolDept").value,
-      residency: document.getElementById("draft-residency").value,
-      purposeNote: document.getElementById("draft-purposeNote").value,
-      tuitionFeeInWords: document.getElementById("draft-tuitionFeeInWords").value,
-      hostelFeeInWords: document.getElementById("draft-hostelFeeInWords").value
-    };
-    api("/api/department/applications/"+DRAFT_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: fields})}).then(function(){
-      document.getElementById("draft-save-confirm").style.display = "inline";
-      setTimeout(function(){
-        document.getElementById("draft-save-confirm").style.display = "none";
-        document.getElementById("draft-overlay").classList.remove("open");
-      }, 900);
+  function edRefreshStatus(){
+    var el = document.getElementById("editor-unresolved");
+    if(!ED.editable){ el.className=""; el.textContent = "This certificate can no longer be edited."; return; }
+    var u = edUnresolvedNow();
+    if(u.length){ el.className = "bad"; el.textContent = u.length + " highlighted field" + (u.length>1?"s":"") + " still to fill: " + u.filter(function(x,i){return u.indexOf(x)===i;}).join("; "); }
+    else { el.className = "good"; el.textContent = "All fields filled."; }
+  }
+  function openCertificateEditor(appId, onClose){
+    ED.appId = appId; ED.onClose = onClose || null; ED.dirty = false;
+    return api("/api/applications/"+appId+"/certificate-editor").then(function(res){
+      ED.basedOn = res.updatedAt; ED.editable = res.editable;
+      document.getElementById("editor-title").textContent = "Certificate — " + res.certTypeLabel;
+      document.getElementById("editor-sub").textContent = res.applicationCode + " · " + res.studentName + (res.saved ? " · edited copy" : " · generated from template") + " · the reference number, date, QR code, signature and seal are added automatically when it is issued";
+      edPage().innerHTML = res.html;
+      edPage().setAttribute("contenteditable", res.editable ? "true" : "false");
+      document.querySelectorAll("#editor-toolbar button, #editor-toolbar select, #editor-toolbar input, #editor-save, #editor-reset").forEach(function(b){ b.disabled = !res.editable; });
+      document.getElementById("editor-save-confirm").style.display = "none";
+      edRefreshStatus();
+      document.getElementById("editor-overlay").classList.add("open");
+      edPage().focus();
+    }).catch(function(e){ alert(e.message || "Could not open the editor."); });
+  }
+  function closeCertificateEditor(){
+    if(ED.dirty && !confirm("You have unsaved changes. Close without saving?")) return;
+    document.getElementById("editor-overlay").classList.remove("open");
+    if(ED.onClose) ED.onClose();
+  }
+  function saveCertificateEditor(force){
+    return api("/api/applications/"+ED.appId+"/certificate-html", {method:"PUT", body: JSON.stringify({html: edPage().innerHTML, basedOn: ED.basedOn, force: !!force})})
+      .then(function(res){
+        ED.basedOn = res.updatedAt; ED.dirty = false;
+        var c = document.getElementById("editor-save-confirm"); c.style.display = "inline"; setTimeout(function(){ c.style.display = "none"; }, 2500);
+        return true;
+      }).catch(function(e){
+        if(e && e.code === "EDIT_CONFLICT"){
+          if(confirm(e.message + "\n\nPress OK to overwrite their version with yours, or Cancel to keep editing.")) return saveCertificateEditor(true);
+          return false;
+        }
+        alert((e && e.message) || "Could not save."); return false;
+      });
+  }
+  document.getElementById("editor-toolbar").addEventListener("mousedown", function(e){
+    // keep the text selection while a toolbar button is clicked
+    if(e.target.closest("button")) e.preventDefault();
+  });
+  document.getElementById("editor-toolbar").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-cmd]"); if(!b || !ED.editable) return;
+    edPage().focus();
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand(b.dataset.cmd, false, null);
+    ED.dirty = true; edRefreshStatus();
+  });
+  document.getElementById("editor-fontsize").addEventListener("change", function(){
+    if(!this.value) return;
+    edPage().focus(); document.execCommand("styleWithCSS", false, false);   // <font size> survives the server-side clean-up; CSS keywords would not
+    document.execCommand("fontSize", false, this.value); this.value = ""; ED.dirty = true;
+  });
+  document.getElementById("editor-fontname").addEventListener("change", function(){
+    if(!this.value) return;
+    edPage().focus(); document.execCommand("styleWithCSS", false, true);
+    document.execCommand("fontName", false, this.value); this.value = ""; ED.dirty = true;
+  });
+  document.getElementById("editor-color").addEventListener("input", function(){ edPage().focus(); document.execCommand("styleWithCSS", false, true); document.execCommand("foreColor", false, this.value); ED.dirty = true; });
+  document.getElementById("editor-hilite").addEventListener("input", function(){ edPage().focus(); document.execCommand("styleWithCSS", false, true); document.execCommand("hiliteColor", false, this.value); ED.dirty = true; });
+  edPage().addEventListener("input", function(){ ED.dirty = true; edRefreshStatus(); });
+  edPage().addEventListener("paste", function(e){
+    // paste as plain text: pasted Word/web markup would bring styles the certificate must not carry
+    e.preventDefault();
+    var t = (e.clipboardData || window.clipboardData).getData("text/plain");
+    document.execCommand("insertText", false, t);
+  });
+  document.getElementById("editor-save").addEventListener("click", function(){ saveCertificateEditor(false); });
+  document.getElementById("editor-close").addEventListener("click", closeCertificateEditor);
+  document.getElementById("editor-reset").addEventListener("click", function(){
+    if(!confirm("Discard all manual edits to this certificate and regenerate it from the template and the student's records?")) return;
+    api("/api/applications/"+ED.appId+"/certificate-html/reset", {method:"POST"}).then(function(res){
+      edPage().innerHTML = res.html; ED.basedOn = res.updatedAt; ED.dirty = false; edRefreshStatus();
     }).catch(function(e){ alert(e.message); });
   });
+  // Show the Registrar's chosen signature / seal inside the editor without changing the saved HTML.
+  function setEditorSigPreview(sigB64, sealB64){
+    var st = document.getElementById("editor-sigstyle");
+    if(!st){ st = document.createElement("style"); st.id = "editor-sigstyle"; document.head.appendChild(st); }
+    var css = "";
+    if(sigB64) css += '#editor-page .sig-token[data-token="signature"]{min-width:150px;min-height:56px;color:transparent;border-color:transparent;background:url("'+sigB64+'") no-repeat left center/contain;}';
+    if(sealB64) css += '#editor-page .sig-token[data-token="seal"]{min-width:100px;min-height:100px;color:transparent;border-color:transparent;background:url("'+sealB64+'") no-repeat left center/contain;}';
+    st.textContent = css;
+  }
 
   // ---------------- REGISTRAR ----------------
   function loadRegistrarScreen(){ refreshRegistrarQueue(); refreshIssuedLog(); }
@@ -1167,18 +1342,26 @@
     document.getElementById("issue-signature-file").value = "";
     document.getElementById("issue-seal-preview").innerHTML = "";
     document.getElementById("issue-seal-file").value = "";
-    document.getElementById("issue-save-confirm").style.display = "none";
-    api("/api/applications/"+appId+"/certificate-preview").then(function(res){
-      var d = res.certificateDraft;
-      document.getElementById("issue-studentName").value = d.studentName || "";
-      document.getElementById("issue-programName").value = d.programName || "";
-      document.getElementById("issue-schoolDept").value = d.schoolDept || "";
-      document.getElementById("issue-residency").value = d.residency || "";
-      document.getElementById("issue-tuitionFeeInWords").value = d.tuitionFeeInWords || "";
-      document.getElementById("issue-hostelFeeInWords").value = d.hostelFeeInWords || "";
-      document.getElementById("issue-overlay").classList.add("open");
-    }).catch(function(e){ alert(e.message); });
+    setEditorSigPreview(null, null);
+    document.getElementById("issue-summary").textContent = "";
+    document.getElementById("issue-overlay").classList.add("open");
+    api("/api/applications/"+appId+"/certificate-editor").then(function(res){
+      var n = res.unresolved.length;
+      document.getElementById("issue-summary").textContent = res.applicationCode + " · " + res.studentName + " — " +
+        (n ? n + " highlighted field" + (n>1?"s":"") + " must be filled in the editor before this can be issued." : "all fields filled.");
+    }).catch(function(){});
   }
+  document.getElementById("issue-open-editor").addEventListener("click", function(){
+    setEditorSigPreview(ISSUE_SIGNATURE_B64, ISSUE_SEAL_B64);
+    openCertificateEditor(ISSUE_APP_ID, function(){ if(ISSUE_APP_ID) openIssueModal.refreshSummary(); });
+  });
+  openIssueModal.refreshSummary = function(){
+    api("/api/applications/"+ISSUE_APP_ID+"/certificate-editor").then(function(res){
+      var n = res.unresolved.length;
+      document.getElementById("issue-summary").textContent = res.applicationCode + " · " + res.studentName + " — " +
+        (n ? n + " highlighted field" + (n>1?"s":"") + " must be filled in the editor before this can be issued." : "all fields filled.");
+    }).catch(function(){});
+  };
   document.getElementById("issue-cancel").addEventListener("click", function(){ document.getElementById("issue-overlay").classList.remove("open"); });
   document.getElementById("issue-signature-file").addEventListener("change", function(e){
     var file = e.target.files[0];
@@ -1200,23 +1383,6 @@
     };
     reader.readAsDataURL(file);
   });
-  function currentIssueDraftFields(){
-    return {
-      studentName: document.getElementById("issue-studentName").value,
-      programName: document.getElementById("issue-programName").value,
-      schoolDept: document.getElementById("issue-schoolDept").value,
-      residency: document.getElementById("issue-residency").value,
-      tuitionFeeInWords: document.getElementById("issue-tuitionFeeInWords").value,
-      hostelFeeInWords: document.getElementById("issue-hostelFeeInWords").value
-    };
-  }
-  document.getElementById("issue-save-draft").addEventListener("click", function(){
-    api("/api/department/applications/"+ISSUE_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: currentIssueDraftFields()})}).then(function(){
-      var c = document.getElementById("issue-save-confirm");
-      c.style.display = "inline";
-      setTimeout(function(){ c.style.display = "none"; }, 2500);
-    }).catch(function(e2){ alert(e2.message); });
-  });
   document.getElementById("issue-confirm").addEventListener("click", function(){
     if(!ISSUE_SIGNATURE_B64){ alert("Upload a signature image first."); return; }
     var body = {
@@ -1225,13 +1391,10 @@
       signaturePosition: { top: Number(document.getElementById("issue-sig-top").value)||78, left: Number(document.getElementById("issue-sig-left").value)||8 },
       sealPosition: { top: Number(document.getElementById("issue-seal-top").value)||70, left: Number(document.getElementById("issue-seal-left").value)||60 }
     };
-    // Auto-save any edited draft fields first, so a forgotten "Save changes" click never loses an edit.
-    api("/api/department/applications/"+ISSUE_APP_ID+"/certificate-draft", {method:"PATCH", body: JSON.stringify({fields: currentIssueDraftFields()})})
-      .then(function(){
-        return api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify(body)});
-      })
+    api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify(body)})
       .then(function(res){
         document.getElementById("issue-overlay").classList.remove("open");
+        setEditorSigPreview(null, null);
         showCertificate(res.certificate, res.html);
         refreshRegistrarQueue(); refreshIssuedLog();
       }).catch(function(e2){ alert(e2.message); });
@@ -1259,7 +1422,67 @@
     });
     loadSchoolsPanel();
     loadBrandingSettings();
+    loadCertificateDataPanel();
   }
+  // ---------------- CERTIFICATE DATA PANEL (Super Admin) ----------------
+  var CD_PROFILE_KEYS = ["gender","current_semester","completed_semester","admission_month_year","admission_academic_year","admission_route","completion_month_year","completion_year","cgpa","cgpa_scale","abc_id","foundation_batch","hostel_since","financial_aid_percent","address","adept_scores"];
+  var CS_KEYS = ["bank_account_number","bank_ifsc","bank_name","bank_branch","bank_branch_code","cgpa_scale","mysy_notify_email","registry_email"];
+  function flash(id){ var c = document.getElementById(id); c.style.display = "inline"; setTimeout(function(){ c.style.display = "none"; }, 2500); }
+  function loadCertificateDataPanel(){
+    api("/api/users").then(function(users){
+      var students = users.filter(function(u){ return u.role_code === "student"; });
+      var sel = document.getElementById("cd-student");
+      sel.innerHTML = '<option value="">Choose a student…</option>' + students.map(function(u){ return '<option value="'+u.user_id+'">'+escapeHtml(u.name)+' ('+escapeHtml(u.username)+')</option>'; }).join("");
+    });
+    api("/api/programmes").then(function(list){
+      document.getElementById("cd-programmes").innerHTML = list.map(function(p){
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><span style="flex:1;font-size:13px;">'+escapeHtml(p.name)+'</span>'+
+          '<input type="text" data-prog="'+p.programme_id+'" value="'+(p.duration_years||"")+'" placeholder="years" style="width:70px;margin:0;">'+
+          '<button class="btn ghost small" data-prog-save="'+p.programme_id+'">Save</button></div>';
+      }).join("");
+    });
+    api("/api/settings/certificate").then(function(st){
+      CS_KEYS.forEach(function(k){ document.getElementById("cs-"+k).value = st[k] || ""; });
+    });
+  }
+  document.getElementById("cd-student").addEventListener("change", function(){
+    var form = document.getElementById("cd-student-form");
+    if(!this.value){ form.style.display = "none"; return; }
+    api("/api/users/"+this.value+"/profile").then(function(u){
+      var d = u.profile_data || {};
+      CD_PROFILE_KEYS.forEach(function(k){
+        var v = d[k]; if(v && typeof v === "object") v = JSON.stringify(v);
+        document.getElementById("cd-"+k).value = (v === undefined || v === null) ? "" : v;
+      });
+      form.style.display = "block";
+    }).catch(function(e){ alert(e.message); });
+  });
+  document.getElementById("cd-student-save").addEventListener("click", function(){
+    var id = document.getElementById("cd-student").value; if(!id) return;
+    var data = {};
+    CD_PROFILE_KEYS.forEach(function(k){ data[k] = document.getElementById("cd-"+k).value; });
+    api("/api/users/"+id, {method:"PATCH", body: JSON.stringify({profileData: data})}).then(function(){ flash("cd-student-confirm"); }).catch(function(e){ alert(e.message); });
+  });
+  document.getElementById("cd-programmes").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-prog-save]"); if(!b) return;
+    var v = document.querySelector('input[data-prog="'+b.dataset.progSave+'"]').value.trim();
+    api("/api/programmes/"+b.dataset.progSave, {method:"PATCH", body: JSON.stringify({durationYears: v === "" ? null : Number(v)})})
+      .then(function(){ b.textContent = "Saved"; setTimeout(function(){ b.textContent = "Save"; }, 1800); }).catch(function(e2){ alert(e2.message); });
+  });
+  document.getElementById("cs-save").addEventListener("click", function(){
+    Promise.all(CS_KEYS.map(function(k){
+      return api("/api/settings/"+k, {method:"PUT", body: JSON.stringify({value: document.getElementById("cs-"+k).value.trim() || null})});
+    })).then(function(){ flash("cs-confirm"); }).catch(function(e){ alert(e.message); });
+  });
+  document.getElementById("cd-audit-btn").addEventListener("click", function(){
+    api("/api/admin/certificate-fields").then(function(res){
+      document.getElementById("cd-audit").innerHTML = res.certificateTypes.map(function(t){
+        return '<p class="label" style="margin-top:12px;">'+escapeHtml(t.label)+' — '+t.fields.length+' fields</p><table><thead><tr><th>Field</th><th>Comes from</th></tr></thead><tbody>'+
+          t.fields.map(function(f){ return '<tr><td>'+escapeHtml(f.label)+'</td><td><code>'+escapeHtml(f.source)+'</code></td></tr>'; }).join("")+'</tbody></table>';
+      }).join("");
+    }).catch(function(e){ alert(e.message); });
+  });
+
   function renderUsers(users){
     document.getElementById("users-ledger").innerHTML = users.map(function(u){
       var isSelf = u.user_id === STATE.user.id;

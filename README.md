@@ -39,7 +39,8 @@ there's no separate "pending registrar" status to keep in sync.
 | `student` | Applicant |
 | `school_admin` | School's Office |
 | `exam_admin` | Exam Office |
-| `fees_finaid_admin` | Fees & Financial Aid Department |
+| `fees_admin` | Fees Department |
+| `finaid_admin` | Financial Aid Department |
 | `admission_admin` | Admission Office |
 | `warden` | Warden (hostel) |
 | `registrar_admin` | Office of the Registrar — final signing & issuance |
@@ -61,7 +62,8 @@ Demo logins (username / password), all seeded by `npm run seed`:
 aarav.mehta   / student123    (Student)
 priya.desai   / admin123      (School's Office)
 karan.bose    / admin123      (Exam Office)
-meera.iyer    / admin123      (Fees & Financial Aid Dept)
+meera.iyer    / admin123      (Fees Dept)
+rohan.pillai  / admin123      (Financial Aid Dept)
 arjun.rao     / admin123      (Admission Office)
 sunita.varma  / admin123      (Warden)
 fatima.qureshi/ admin123      (Registrar's Office)
@@ -129,7 +131,7 @@ Three ways student accounts get into the system, in increasing order of automati
 
 Six capabilities added on top of the v1 forwarding workflow (§"How the workflow model works" above still holds — this extends it):
 
-1. **Granular status tracking** — `GET /api/applications/:id/tracker` returns the exact level (`SCHOOL`, `FEES_FINAID`, `REGISTRAR`, etc.), the last person who acted (`assigned_reviewer_id`), and pending duration since `level_entered_at`. Every dashboard (student, department, registrar) renders the same step chain via the `trackSteps()` helper in `public/index.html` — no separate tracker UI per role.
+1. **Granular status tracking** — `GET /api/applications/:id/tracker` returns the exact level (`SCHOOL`, `FEES`, `FINAID`, `REGISTRAR`, etc.), the last person who acted (`assigned_reviewer_id`), and pending duration since `level_entered_at`. Every dashboard (student, department, registrar) renders the same step chain via the `trackSteps()` helper in `public/index.html` — no separate tracker UI per role.
 
 2. **SDMIS profile photo + fee-in-words** — login syncs `users.profile_picture_url` (placeholder initials avatar until a real SDMIS photo feed exists — see "known gaps"). `GET /api/applications/:id/certificate-preview` builds a `fee_snapshot` from `users.tuition_fee_amount` / `hostel_fee_amount` (or sensible defaults) and converts both to formal words via the `numberToWords()` helper in `server.js` (Indian numbering system — Lakh/Crore).
 
@@ -392,3 +394,26 @@ confirms before submitting.
   response (`devOtp`) — but no SMTP provider is connected. Wire real email
   delivery (SES, SendGrid, etc.) for both, and remove `devOtp` from the OTP
   response once that's in place.
+
+
+---
+
+## v4 — Fees / Financial Aid split, rich-text editor, template data sources
+
+**Roles & routing** (matches *Digi_Certficate-Forwarding_Sequence.docx*): `fees_admin` and `finaid_admin` replace the merged role.
+Bank Loan–General: School → Fees. Bank Loan–with Financial Aid and MYSY: School → Fees → Financial Aid.
+
+**Rich-text certificate editor** — any non-student login (department desks, *All applications*, Registrar's *Review & issue*) opens the
+fully rendered certificate on the letterhead with a formatting toolbar. Edits save to `applications.certificate_html` (HTML is cleaned
+server-side; no scripts or remote images). The Registrar cannot issue while a highlighted blank remains. On issue the reference number,
+date, QR token, signature and seal are filled in and the exact HTML is frozen in `certificates.final_html`.
+
+**Template blanks** — every blank on every template is defined in `src/certificateFields.js` with its source:
+`users.profile_data` (gender, semesters, CGPA, ABC/NAD/APAAR ID, address, admission/completion dates, ADEPT scores, ...),
+`programmes.duration_years`, `applications.request_details` (VISA country/event/dates/funding, entered by the student),
+and `app_settings` (bank account, IFSC, MYSY/registry e-mails). Super Admin edits these under *Users & roles → Certificate data*;
+the same panel has a **field audit** listing every blank on all 10 templates. Bulk import (CSV/Excel/sync API) accepts the profile
+columns too (`gender, current_semester, cgpa, abc_id, address, ...`).
+
+**Deploying v4:** run `db/migrations/005_editor_fields.sql` on Neon (idempotent, one transaction), then deploy, then `npm run seed`
+(adds the Fees/Financial Aid demo users and programme lengths; it never overwrites existing data). `npm install` is needed for `sanitize-html`.

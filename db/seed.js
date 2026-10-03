@@ -9,7 +9,8 @@ const ROLES = [
   { role_code: "student", label: "Student" },
   { role_code: "school_admin", label: "School's Office" },
   { role_code: "exam_admin", label: "Exam Office" },
-  { role_code: "fees_finaid_admin", label: "Fees & Financial Aid Department" },
+  { role_code: "fees_admin", label: "Fees Department" },
+  { role_code: "finaid_admin", label: "Financial Aid Department" },
   { role_code: "admission_admin", label: "Admission Office" },
   { role_code: "warden", label: "Warden" },
   { role_code: "registrar_admin", label: "Registrar's Office" },
@@ -22,12 +23,12 @@ const CERT_TYPES = [
   { code: "MIGRATION_EARLY_EXIT", label: "Migration Certificate — Early Exit", stages: ["SCHOOL", "EXAM"], warden_conditional: false, requires_document: false, requires_undertaking: false },
   { code: "MEDIUM_OF_INSTRUCTION", label: "Medium of Instruction Certificate", stages: ["SCHOOL", "EXAM"], warden_conditional: false, requires_document: false, requires_undertaking: false },
   { code: "VISA_GENERAL", label: "VISA & Passport — General", stages: ["SCHOOL"], warden_conditional: false, requires_document: true, requires_undertaking: false },
-  { code: "BANK_LOAN_FIN_AID", label: "Bank Loan — General, with Financial Aid", stages: ["SCHOOL", "FEES_FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: false },
-  { code: "BANK_LOAN_GENERAL", label: "Bank Loan — General", stages: ["SCHOOL", "FEES_FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: false },
+  { code: "BANK_LOAN_FIN_AID", label: "Bank Loan — General, with Financial Aid", stages: ["SCHOOL", "FEES", "FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: false },
+  { code: "BANK_LOAN_GENERAL", label: "Bank Loan — General", stages: ["SCHOOL", "FEES"], warden_conditional: false, requires_document: false, requires_undertaking: false },
   { code: "BANK_LOAN_ADEPT", label: "Bank Loan — ADEPT Score", stages: ["ADMISSION"], warden_conditional: false, requires_document: false, requires_undertaking: false },
   { code: "FIELD_RESEARCH", label: "Field Research Certificate", stages: ["SCHOOL"], warden_conditional: false, requires_document: true, requires_undertaking: false },
   { code: "GOVT_SCHOLARSHIP_GENERAL", label: "Government Scholarship — General", stages: ["SCHOOL"], warden_conditional: true, requires_document: false, requires_undertaking: false },
-  { code: "MYSY_SCHOLARSHIP", label: "MYSY Scholarship Certificate", stages: ["SCHOOL", "FEES_FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: true }
+  { code: "MYSY_SCHOLARSHIP", label: "MYSY Scholarship Certificate", stages: ["SCHOOL", "FEES", "FINAID"], warden_conditional: false, requires_document: false, requires_undertaking: true }
 ];
 
 // Canonical, university-wide programme list — schools and students are both
@@ -44,6 +45,17 @@ const PROGRAMMES = [
   "PhD"
 ];
 
+// Programme lengths in years. ASSUMPTIONS — confirm against the academic
+// regulations: only the four undergraduate programmes are pre-filled, the rest
+// are left empty so the certificates show a highlighted blank instead of a guess.
+// Edit at any time via PATCH /api/programmes/:id { durationYears }.
+const PROGRAMME_DURATION_YEARS = {
+  "Bachelor of Architecture": 5,
+  "Bachelor of Design": 4,
+  "Bachelor of Technology (Climate Change)": 4,
+  "Bachelor of Visual Arts": 4
+};
+
 // Schools & the (canonical) programmes each one teaches. These are a
 // starting placeholder — reassign real programmes per school via Users &
 // Roles → Schools & Programmes once you know the real mapping.
@@ -59,10 +71,15 @@ const SCHOOLS = [
 const USERS = [
   { username: "aarav.mehta", name: "Aarav Mehta", role_code: "student",
     student_sdmis_id: "SDM-2023-00451", program: "Bachelor of Technology (Climate Change)", batch: "2023-2027",
-    school_dept: "School of Technology", school_code: "SOT", residency: "HOSTELLER" },
+    school_dept: "School of Technology", school_code: "SOT", residency: "HOSTELLER",
+    // Demo record data only — real values arrive via the SDMIS sync / bulk import.
+    profile_data: { gender: "M", current_semester: 5, completed_semester: 4, admission_month_year: "August 2023",
+      cgpa: "8.4", cgpa_scale: "10", abc_id: "DEMO-ABC-0001", address: "Hostel Block B, Anant National University, Bopal, Ahmedabad",
+      hostel_since: "August 2023", admission_route: "ACPC" } },
   { username: "priya.desai", password: "admin123", name: "Priya Desai", role_code: "school_admin", school_code: "SOT" },
   { username: "karan.bose", password: "admin123", name: "Karan Bose", role_code: "exam_admin" },
-  { username: "meera.iyer", password: "admin123", name: "Meera Iyer", role_code: "fees_finaid_admin" },
+  { username: "meera.iyer", password: "admin123", name: "Meera Iyer", role_code: "fees_admin" },
+  { username: "rohan.pillai", password: "admin123", name: "Rohan Pillai", role_code: "finaid_admin" },
   { username: "arjun.rao", password: "admin123", name: "Arjun Rao", role_code: "admission_admin" },
   { username: "sunita.varma", password: "admin123", name: "Sunita Varma", role_code: "warden" },
   { username: "fatima.qureshi", password: "admin123", name: "Fatima Qureshi", role_code: "registrar_admin" },
@@ -94,8 +111,10 @@ async function main() {
 
     for (let i = 0; i < PROGRAMMES.length; i++) {
       await client.query(
-        "INSERT INTO programmes (name, sort_order) VALUES ($1,$2) ON CONFLICT (name) DO UPDATE SET sort_order = EXCLUDED.sort_order",
-        [PROGRAMMES[i], i + 1]
+        `INSERT INTO programmes (name, sort_order, duration_years) VALUES ($1,$2,$3)
+         ON CONFLICT (name) DO UPDATE SET sort_order = EXCLUDED.sort_order,
+           duration_years = COALESCE(programmes.duration_years, EXCLUDED.duration_years)`,
+        [PROGRAMMES[i], i + 1, PROGRAMME_DURATION_YEARS[PROGRAMMES[i]] || null]
       );
     }
 
@@ -116,10 +135,12 @@ async function main() {
       const hash = u.password ? await bcrypt.hash(u.password, 10) : await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10);
       const schoolId = u.school_code ? schoolIdByCode[u.school_code] : null;
       await client.query(
-        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, batch, school_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         ON CONFLICT (username) DO UPDATE SET name = EXCLUDED.name, role_code = EXCLUDED.role_code, school_id = EXCLUDED.school_id`,
-        [u.username, hash, u.name, u.role_code, u.student_sdmis_id || null, u.program || null, u.school_dept || null, u.residency || null, u.batch || null, schoolId]
+        `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, batch, school_id, profile_data)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+         ON CONFLICT (username) DO UPDATE SET name = EXCLUDED.name, role_code = EXCLUDED.role_code, school_id = EXCLUDED.school_id,
+           -- fill demo record data only when the account has none; never overwrite real data
+           profile_data = CASE WHEN users.profile_data = '{}'::jsonb THEN EXCLUDED.profile_data ELSE users.profile_data END`,
+        [u.username, hash, u.name, u.role_code, u.student_sdmis_id || null, u.program || null, u.school_dept || null, u.residency || null, u.batch || null, schoolId, JSON.stringify(u.profile_data || {})]
       );
     }
 

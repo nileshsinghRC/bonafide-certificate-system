@@ -13,7 +13,7 @@ CREATE SEQUENCE IF NOT EXISTS certificate_number_seq START 1;
 
 -- ---------------- ROLES ----------------
 -- One row per operational role. Department roles (school_admin, exam_admin,
--- fees_finaid_admin, admission_admin, warden) each own one stage of the
+-- fees_admin, finaid_admin, admission_admin, warden) each own one stage of the
 -- forwarding sequence below; registrar_admin always owns the final stage.
 CREATE TABLE IF NOT EXISTS roles (
     role_code   VARCHAR(30) PRIMARY KEY,
@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS schools (
 CREATE TABLE IF NOT EXISTS programmes (
     programme_id SMALLSERIAL PRIMARY KEY,
     name         VARCHAR(150) NOT NULL UNIQUE,
-    sort_order   SMALLINT NOT NULL DEFAULT 0
+    sort_order   SMALLINT NOT NULL DEFAULT 0,
+    duration_years SMALLINT                      -- drives "(08/10) semesters" and "(four/five)-year" on certificates
 );
 
 -- ---------------- USERS ----------------
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
     hostel_fee_amount NUMERIC(12,2),
     otp_code_hash TEXT,                    -- student login: one-time code, never a password
     otp_expires_at TIMESTAMPTZ,
+    profile_data  JSONB NOT NULL DEFAULT '{}'::jsonb, -- certificate template blanks: gender, cgpa, abc_id, address, admission_month_year, ... (see src/certificateFields.js)
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -99,6 +101,7 @@ CREATE TABLE IF NOT EXISTS applications (
     school_dept             VARCHAR(100),
     school_id                SMALLINT REFERENCES schools(school_id),
     residency               VARCHAR(20),
+    batch                   VARCHAR(20),             -- copied from the student at submission time
     cert_type_id            SMALLINT NOT NULL REFERENCES certificate_types(cert_type_id),
     stages                  JSONB NOT NULL,          -- resolved stage list for this application, e.g. ["SCHOOL","WARDEN"]
     current_stage_index     SMALLINT NOT NULL DEFAULT 0,
@@ -118,6 +121,13 @@ CREATE TABLE IF NOT EXISTS applications (
     -- Department inline editing + fee-in-words snapshot
     certificate_draft             JSONB,
     fee_snapshot                    JSONB,
+
+    -- Rich-text certificate editor (any non-student login); this is what the Registrar issues
+    certificate_html                 TEXT,
+    certificate_html_updated_by      UUID REFERENCES users(user_id),
+    certificate_html_updated_at      TIMESTAMPTZ,
+    -- Per-request facts the student supplies (VISA: country, eventName, dateFrom, dateTo, sponsorship)
+    request_details                   JSONB NOT NULL DEFAULT '{}'::jsonb,
 
     created_at                       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                        TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -173,6 +183,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     registrar_seal_data          TEXT,          -- base64 data: URL of the uploaded official seal image
     signature_position             JSONB,         -- {top, left} percentages for customized placement
     seal_position                    JSONB,
+    final_html                         TEXT,         -- frozen certificate body exactly as issued (verify / download / reprint serve this)
     signed_at                    TIMESTAMPTZ,
 
     -- Automated notification
