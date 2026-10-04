@@ -105,7 +105,6 @@
   .import-result th{color:var(--slate);font-weight:600;font-size:11px;text-transform:uppercase;}
   .import-result code{background:var(--gold-soft);color:var(--ink);padding:1px 5px;border-radius:3px;}
   .cert-wrap{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0;margin-top:16px;overflow:hidden;}
-  .cert-wrap img.letterhead-band{display:block;width:100%;height:auto;}
   .cert-body{padding:10px 34px 26px;color:#111;font-size:13px;line-height:1.55;}
   .cert-body h2.cert-heading{font-family:var(--font-display);text-align:center;font-size:19px;text-decoration:underline;margin:8px 0 14px;}
   .cert-body mark{background:#FFF176;padding:0 2px;font-weight:600;}
@@ -139,24 +138,32 @@
   .cert-body mark.blank{background:#FFF176;outline:1px dashed #C9A400;}
   .cert-body table.adept-table{border-collapse:collapse;margin:0 0 10px;} .cert-body table.adept-table td,.cert-body table.adept-table th{border:1px solid #999;padding:3px 10px;text-align:left;}
   .cert-body .sig-token{display:inline-block;min-width:110px;min-height:24px;border:1px dashed #9aa;color:#889;font-size:11px;padding:2px 6px;}
-  /* rich-text editor */
+  /* rich-text editor (TinyMCE) + A4 page with confidential letterhead */
   #editor-overlay{z-index:60;}
-  .editor-modal{background:var(--parchment-raised);border:1px solid var(--line);border-radius:6px;width:100%;max-width:860px;max-height:94vh;display:flex;flex-direction:column;}
-  .editor-head{padding:14px 18px 8px;} .editor-head h3{font-family:var(--font-display);font-weight:500;font-size:18px;margin:0;} .editor-head .sub{font-size:12px;color:var(--slate);margin-top:2px;}
-  .editor-toolbar{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:8px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;}
-  .editor-toolbar button,.editor-toolbar select{height:30px;min-width:30px;padding:0 8px;border:1px solid var(--line);background:var(--parchment-raised);border-radius:3px;cursor:pointer;font-size:13px;width:auto;margin:0;}
-  .editor-toolbar button:hover{background:var(--gold-soft);} .editor-toolbar .sep{width:1px;height:22px;background:var(--line);margin:0 4px;}
-  .editor-toolbar input[type=color]{width:30px;height:30px;padding:1px;border:1px solid var(--line);border-radius:3px;background:none;cursor:pointer;margin:0;}
-  .editor-scroll{overflow-y:auto;padding:14px 18px;background:#E9E6DD;flex:1;}
-  #editor-page{outline:none;} #editor-page:focus-within{box-shadow:0 0 0 2px var(--gold);}
+  .editor-modal{background:var(--parchment-raised);border:1px solid var(--line);border-radius:6px;width:100%;max-width:900px;max-height:96vh;display:flex;flex-direction:column;}
+  .editor-head{padding:12px 18px 6px;} .editor-head h3{font-family:var(--font-display);font-weight:500;font-size:18px;margin:0;} .editor-head .sub{font-size:12px;color:var(--slate);margin-top:2px;}
+  .editor-area{overflow:auto;flex:1;background:#E9E6DD;padding:0 0 6px;min-height:380px;}
+  .editor-area .tox-tinymce{border:none !important;border-radius:0 !important;margin:0 auto;}
+  #editor-ruler{position:relative;height:22px;width:794px;margin:0 auto;background:#fff;border-bottom:1px solid var(--line);font-size:9px;color:#667;user-select:none;}
+  #editor-ruler .rz{position:absolute;top:0;bottom:0;background:rgba(122,46,46,0.14);}
+  #editor-ruler .tk{position:absolute;bottom:0;width:1px;height:7px;background:#99a;} #editor-ruler .tn{position:absolute;top:1px;transform:translateX(-50%);}
+  .editor-margins{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 18px;font-size:12px;border-top:1px solid var(--line);background:#fff;}
+  .editor-margins input{width:56px;margin:0;padding:3px 5px;font-size:12px;}
   .editor-foot{padding:10px 18px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   #editor-unresolved{font-size:12.5px;flex:1;min-width:200px;} #editor-unresolved.bad{color:var(--brick);} #editor-unresolved.good{color:var(--sage);}
+  .tox-tinymce-aux{z-index:2000 !important;}
+  .lh-scroll{overflow:auto;max-height:78vh;background:#E9E6DD;padding:14px;border-radius:4px;}
+  .lh-page{position:relative;width:210mm;height:297mm;background:#fff;margin:0 auto;box-shadow:0 2px 14px rgba(0,0,0,0.25);overflow:hidden;}
+  .lh-page img.lh-bg{position:absolute;left:0;top:0;width:100%;height:100%;z-index:0;}
+  .lh-page .lh-content{position:relative;z-index:1;box-sizing:border-box;height:100%;overflow:hidden;}
+  #lh-preview-overlay{z-index:70;}
   @media print{
     @page{ size: A4; margin: 0; }
     html, body{ height: auto !important; }
     body *{ visibility: hidden; }
     .print-target, .print-target *{ visibility: visible; }
     .print-target{ position: absolute; top: 0; left: 0; width: 100%; margin: 0; border: none; box-shadow: none; }
+    .print-target.lh-page{ width: 210mm; height: 297mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .cert-wrap{ border: none; }
     .no-print{ display: none !important; }
   }
@@ -335,6 +342,13 @@
         <button class="btn ghost small" id="close-cert">Close</button>
       </div>
     </div>
+    <div class="panel">
+      <p class="label">Letterhead — confidential, Registrar's office only</p>
+      <p class="section-sub" id="lh-status" style="margin-bottom:8px;"></p>
+      <input type="file" id="lh-file" accept="image/jpeg,image/png" style="max-width:320px;">
+      <button class="btn small" id="lh-upload" style="margin-left:6px;">Upload letterhead</button>
+      <p class="section-sub" style="margin-top:6px;">Upload the letterhead as a full A4 page image (JPEG or PNG, without crop marks). It is never shown to any other staff role; students see it only on their own issued certificate.</p>
+    </div>
     <div class="panel"><p class="label">Issued certificates</p><div class="ledger" id="issued-log"></div></div>
   </section>
 
@@ -421,13 +435,28 @@
           <div><p class="label">Financial aid % on tuition</p><input type="text" id="cd-financial_aid_percent" placeholder="25"></div>
         </div>
         <p class="label" style="margin-top:8px;">Current address</p><textarea id="cd-address" style="min-height:54px;"></textarea>
-        <p class="label" style="margin-top:8px;">ADEPT scores (JSON like {"Drawing":"72"} or plain text)</p><textarea id="cd-adept_scores" style="min-height:54px;"></textarea>
+        <p class="label" style="margin-top:8px;">ADEPT score table (Bank Loan – ADEPT certificate; the template has two score rows)</p>
+        <table style="width:100%;font-size:12.5px;"><thead><tr><th></th><th>MCQ</th><th>Situation Test</th><th>Interview</th><th>Total score</th></tr></thead><tbody>
+          <tr><td>Row 1</td><td><input type="text" id="cd-adept-0-mcq"></td><td><input type="text" id="cd-adept-0-situation"></td><td><input type="text" id="cd-adept-0-interview"></td><td><input type="text" id="cd-adept-0-total"></td></tr>
+          <tr><td>Row 2</td><td><input type="text" id="cd-adept-1-mcq"></td><td><input type="text" id="cd-adept-1-situation"></td><td><input type="text" id="cd-adept-1-interview"></td><td><input type="text" id="cd-adept-1-total"></td></tr>
+        </tbody></table>
         <button class="btn small" id="cd-student-save" style="margin-top:10px;">Save student details</button>
         <span id="cd-student-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-left:8px;">&#10003; Saved</span>
       </div>
 
       <p class="label" style="margin-top:18px;">Programme length (years)</p>
       <div id="cd-programmes"></div>
+
+      <p class="label" style="margin-top:18px;">Fee structure — fills the fee tables on the Bank Loan certificates</p>
+      <p class="section-sub" style="margin-bottom:6px;">Amounts in INR per programme. Leave Batch empty for all batches; a row set saved for a specific batch (e.g. 2023-2027) is used for that batch instead. Year-wise cells left empty are shown as 2 × the semester amount. "After scholarship" amounts are calculated from the student's scholarship %.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+        <select id="fs-programme" style="width:auto;margin:0;"></select>
+        <input type="text" id="fs-batch" placeholder="Batch (optional) e.g. 2023-2027" style="width:210px;margin:0;">
+        <button class="btn ghost small" id="fs-load">Load</button>
+      </div>
+      <table style="width:100%;font-size:12.5px;"><thead><tr><th>Year</th><th>Tuition / semester</th><th>Tuition / year</th><th>Residence &amp; mess / semester</th><th>Residence &amp; mess / year</th></tr></thead><tbody id="fs-rows"></tbody></table>
+      <button class="btn small" id="fs-save" style="margin-top:8px;">Save fee structure</button>
+      <span id="fs-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-left:8px;">&#10003; Saved</span>
 
       <p class="label" style="margin-top:18px;">University constants</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -562,41 +591,43 @@
       <h3 id="editor-title">Certificate editor</h3>
       <div class="sub" id="editor-sub"></div>
     </div>
-    <div class="editor-toolbar" id="editor-toolbar">
-      <button data-cmd="undo" title="Undo">&#8630;</button><button data-cmd="redo" title="Redo">&#8631;</button>
-      <span class="sep"></span>
-      <select id="editor-fontname" title="Font"><option value="">Font</option><option>Arial</option><option>Georgia</option><option>Times New Roman</option><option>Calibri</option><option>Verdana</option></select>
-      <select id="editor-fontsize" title="Font size"><option value="">Size</option><option value="1">Small</option><option value="2">Compact</option><option value="3">Normal</option><option value="4">Large</option><option value="5">Larger</option><option value="6">Huge</option></select>
-      <span class="sep"></span>
-      <button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button><button data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button><button data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button><button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
-      <span class="sep"></span>
-      <input type="color" id="editor-color" value="#111111" title="Text colour"><input type="color" id="editor-hilite" value="#ffff00" title="Highlight colour">
-      <span class="sep"></span>
-      <button data-cmd="justifyLeft" title="Align left">&#8676;</button><button data-cmd="justifyCenter" title="Centre">&#8596;</button><button data-cmd="justifyRight" title="Align right">&#8677;</button><button data-cmd="justifyFull" title="Justify">&#9776;</button>
-      <span class="sep"></span>
-      <button data-cmd="insertUnorderedList" title="Bullets">&bull;&#8801;</button><button data-cmd="insertOrderedList" title="Numbering">1.&#8801;</button><button data-cmd="outdent" title="Decrease indent">&#8676;&#8801;</button><button data-cmd="indent" title="Increase indent">&#8677;&#8801;</button>
-      <span class="sep"></span>
-      <button data-cmd="removeFormat" title="Clear formatting">T&#8203;<sub>x</sub></button>
+    <div class="editor-margins" id="editor-margins">
+      <strong>Page margins (mm)</strong>
+      <span id="mg-fields">
+        Top <input type="text" id="mg-top"> Right <input type="text" id="mg-right"> Bottom <input type="text" id="mg-bottom"> Left <input type="text" id="mg-left">
+        <button class="btn ghost small" id="mg-apply">Apply</button> <button class="btn ghost small" id="mg-default">Default</button>
+      </span>
+      <span id="mg-note" style="color:var(--slate);"></span>
     </div>
-    <div class="editor-scroll">
-      <div class="cert-wrap">
-        <img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">
-        <div class="cert-body" id="editor-page" contenteditable="true" spellcheck="true"></div>
-        <img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">
-      </div>
+    <div class="editor-area">
+      <div id="editor-ruler"></div>
+      <textarea id="editor-tiny"></textarea>
     </div>
     <div class="editor-foot">
       <div id="editor-unresolved"></div>
       <span id="editor-save-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;">&#10003; Saved</span>
       <button class="btn ghost small" id="editor-reset" title="Discard manual edits and regenerate from the template">Reset to generated</button>
+      <button class="btn ghost small" id="editor-preview-lh" style="display:none;" title="Registrar's office only">Preview with letterhead</button>
       <button class="btn ghost small" id="editor-close">Close</button>
       <button class="btn maroon small" id="editor-save">Save changes</button>
     </div>
   </div>
 </div>
 
+<div class="overlay" id="lh-preview-overlay">
+  <div class="modal" style="max-width:880px;max-height:96vh;overflow-y:auto;">
+    <h3>Preview on the university letterhead</h3>
+    <p class="section-sub" id="lh-preview-warn" style="margin-bottom:8px;"></p>
+    <div class="lh-scroll"><div id="lh-preview-slot"></div></div>
+    <div class="modal-actions no-print">
+      <button class="btn ghost small" id="lh-preview-close">Back to editor</button>
+      <button class="btn maroon small" onclick="window.print()">Print / save as PDF</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="cert-viewer-overlay">
-  <div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto;">
+  <div class="modal" style="max-width:880px;max-height:96vh;overflow-y:auto;">
     <h3>Your certificate</h3>
     <div id="cert-viewer-slot"></div>
     <div class="modal-actions no-print">
@@ -1043,12 +1074,7 @@
 
   // ---------------- CERTIFICATE VIEWER (student download + reprint) ----------------
   function openCertificateViewer(res){
-    document.getElementById("cert-viewer-slot").innerHTML =
-      '<div class="cert-wrap print-target">'+
-        '<img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">'+
-        '<div class="cert-body">'+res.html+'<div id="cert-viewer-qr"></div></div>'+
-        '<img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">'+
-      '</div>';
+    document.getElementById("cert-viewer-slot").innerHTML = '<div class="lh-scroll">'+lhPageHtml(res.html, res.margins, res.letterhead, "cert-viewer-qr")+'</div>';
     document.getElementById("cert-viewer-overlay").classList.add("open");
     setTimeout(function(){
       var qrEl = document.querySelector(".print-target #cert-viewer-qr");
@@ -1058,7 +1084,7 @@
       }
     }, 0);
   }
-  document.getElementById("cert-viewer-close").addEventListener("click", function(){
+    document.getElementById("cert-viewer-close").addEventListener("click", function(){
     document.getElementById("cert-viewer-overlay").classList.remove("open");
   });
 
@@ -1179,13 +1205,89 @@
     });
   });
 
+  // ---------------- A4 PAGE + CONFIDENTIAL LETTERHEAD ----------------
+  // One stylesheet drives both the editor (inside the TinyMCE iframe, scope "body") and the
+  // finished page (scope ".lh-content"), so what is edited is what is printed.
+  var DEFAULT_MARGINS = {top:10, right:31.7, bottom:0, left:31.7};
+  function certCss(scope){
+    return scope+'{font-family:Calibri,Carlito,Arial,sans-serif;font-size:11pt;line-height:1.08;color:#111;}'+
+      scope+' p{margin:0 0 8pt;}'+
+      scope+' h2.cert-heading{font-family:Georgia,serif;text-align:center;font-size:14pt;text-decoration:underline;margin:6pt 0 10pt;}'+
+      scope+' mark.blank{background:#FFF176;outline:1px dashed #C9A400;padding:0 2px;font-weight:600;}'+
+      scope+' mark{background:transparent;}'+scope+' mark.blank{background:#FFF176;}'+
+      scope+' .sig-token{display:inline-block;min-width:110px;min-height:24px;border:1px dashed #9aa;color:#889;font-size:9pt;padding:2px 6px;}'+
+      scope+' .sig-marks{margin-top:24px;}'+scope+' .sig-name{font-weight:700;margin:12px 0 0;}'+scope+' .sig-title{font-weight:700;margin:0;}'+
+      scope+' .cert-type-footer{color:#555;font-style:italic;font-size:9pt;margin-top:12px;}'+
+      scope+' .verify-footer{color:#555;font-size:8.5pt;line-height:1.4;margin-top:10px;border-top:1px dashed #bbb;padding-top:6px;}'+
+      scope+' table{border-collapse:collapse;}'+scope+' table.adept-table td,'+scope+' table.adept-table th{border:1px solid #999;padding:3px 10px;text-align:left;}'+
+      scope+' img{max-width:100%;}';
+  }
+  (function(){ var st = document.createElement("style"); st.id = "cert-css"; st.textContent = certCss(".lh-content"); document.head.appendChild(st); })();
+
+  function lhPageHtml(html, m, letterhead, qrId){
+    m = m || DEFAULT_MARGINS;
+    return '<div class="lh-page print-target">'+
+      (letterhead ? '<img class="lh-bg" src="'+letterhead+'" alt="">' : '')+
+      '<div class="lh-content" style="padding:'+m.top+'mm '+m.right+'mm '+m.bottom+'mm '+m.left+'mm;">'+html+(qrId ? '<div id="'+qrId+'"></div>' : '')+'</div></div>';
+  }
+
   // ---------------- RICH-TEXT CERTIFICATE EDITOR (any non-student login) ----------------
-  var ED = { appId: null, basedOn: null, dirty: false, editable: true, onClose: null };
-  var edPage = function(){ return document.getElementById("editor-page"); };
+  var ED = { appId: null, basedOn: null, editable: true, onClose: null, canSetMargins: false, margins: DEFAULT_MARGINS, sig: null, seal: null };
+  var TINY = null, TINY_LOADING = null;
+  var PX_PER_MM = 96/25.4;
+
+  function loadScript(src){
+    return new Promise(function(resolve, reject){
+      var el = document.createElement("script"); el.src = src; el.onload = resolve; el.onerror = function(){ reject({message:"Could not load the editor engine."}); };
+      document.head.appendChild(el);
+    });
+  }
+  function ensureTiny(){
+    if(TINY) return Promise.resolve(TINY);
+    if(TINY_LOADING) return TINY_LOADING;
+    TINY_LOADING = loadScript("/vendor/tinymce/tinymce.min.js").then(function(){
+      return new Promise(function(resolve, reject){
+        tinymce.init({
+          selector: "#editor-tiny",
+          base_url: "/vendor/tinymce", suffix: ".min",
+          width: 830, height: 620, resize: false, branding: false, promotion: false, statusbar: true,
+          menubar: "edit insert format table",
+          plugins: "table image lists advlist searchreplace wordcount",
+          toolbar: "undo redo | fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | table | image | removeformat",
+          toolbar_mode: "wrap",
+          font_family_formats: "Calibri=calibri,carlito,arial,sans-serif;Arial=arial,helvetica,sans-serif;Georgia=georgia,serif;Times New Roman=times new roman,times,serif;Verdana=verdana,sans-serif",
+          font_size_formats: "8pt 9pt 10pt 11pt 12pt 14pt 16pt 18pt 20pt 24pt",
+          table_default_attributes: {border: "1"},
+          table_default_styles: {"border-collapse": "collapse", width: "100%"},
+          table_advtab: true, table_cell_advtab: true, table_row_advtab: true,
+          image_advtab: true, image_caption: false, object_resizing: true,
+          paste_data_images: true, automatic_uploads: false, file_picker_types: "image",
+          file_picker_callback: function(cb){
+            var input = document.createElement("input"); input.type = "file"; input.accept = "image/png,image/jpeg,image/gif,image/webp";
+            input.onchange = function(){
+              var f = input.files[0]; if(!f) return;
+              if(f.size > 1500000){ alert("Image is larger than 1.5 MB. Use a smaller image."); return; }
+              var r = new FileReader(); r.onload = function(){ cb(r.result, {alt: f.name}); }; r.readAsDataURL(f);
+            };
+            input.click();
+          },
+          extended_valid_elements: "mark[class|data-field|data-ph|title|style],span[class|data-token|style|title]",
+          noneditable_class: "sig-token",
+          content_style: "html{background:#E9E6DD;} body{box-sizing:border-box;width:210mm;min-height:297mm;margin:0 auto;background:#fff;box-shadow:0 1px 8px rgba(0,0,0,.2);} "+certCss("body"),
+          setup: function(ed){
+            ed.on("init", function(){ TINY = ed; resolve(ed); });
+            ed.on("input change undo redo ExecCommand", function(){ edRefreshStatus(); });
+          }
+        }).catch(reject);
+      });
+    });
+    return TINY_LOADING;
+  }
 
   function edUnresolvedNow(){
     var out = [];
-    edPage().querySelectorAll("mark.blank").forEach(function(m){
+    if(!TINY) return out;
+    TINY.getBody().querySelectorAll("mark.blank").forEach(function(m){
       var ph = (m.getAttribute("data-ph")||"").trim();
       var txt = (m.textContent||"").replace(/\u00a0/g," ").trim();
       if(txt === "" || txt === ph) out.push(m.getAttribute("title") ? m.getAttribute("title").split(" \u2014 ")[0] : (ph||"blank"));
@@ -1199,30 +1301,68 @@
     if(u.length){ el.className = "bad"; el.textContent = u.length + " highlighted field" + (u.length>1?"s":"") + " still to fill: " + u.filter(function(x,i){return u.indexOf(x)===i;}).join("; "); }
     else { el.className = "good"; el.textContent = "All fields filled."; }
   }
+
+  function drawRuler(){
+    var m = ED.margins, el = document.getElementById("editor-ruler"), h = "";
+    h += '<div class="rz" style="left:0;width:'+(m.left*PX_PER_MM)+'px"></div><div class="rz" style="right:0;width:'+(m.right*PX_PER_MM)+'px"></div>';
+    for(var cm = 1; cm <= 20; cm++){ var x = cm*10*PX_PER_MM; h += '<div class="tk" style="left:'+x+'px"></div><div class="tn" style="left:'+x+'px">'+cm+'</div>'; }
+    el.innerHTML = h;
+  }
+  function applyMargins(){
+    var m = ED.margins;
+    if(TINY){
+      var d = TINY.getDoc(), st = d.getElementById("page-margins");
+      if(!st){ st = d.createElement("style"); st.id = "page-margins"; d.head.appendChild(st); }
+      st.textContent = "body{padding:"+m.top+"mm "+m.right+"mm "+m.bottom+"mm "+m.left+"mm !important;}";
+    }
+    drawRuler();
+    ["top","right","bottom","left"].forEach(function(k){ document.getElementById("mg-"+k).value = m[k]; });
+  }
+  function applySigPreview(){
+    if(!TINY) return;
+    var d = TINY.getDoc(), st = d.getElementById("sig-preview");
+    if(!st){ st = d.createElement("style"); st.id = "sig-preview"; d.head.appendChild(st); }
+    var css = "";
+    if(ED.sig) css += '.sig-token[data-token="signature"]{min-width:150px;min-height:56px;color:transparent;border-color:transparent;background:url("'+ED.sig+'") no-repeat left center/contain;}';
+    if(ED.seal) css += '.sig-token[data-token="seal"]{min-width:100px;min-height:100px;color:transparent;border-color:transparent;background:url("'+ED.seal+'") no-repeat left center/contain;}';
+    st.textContent = css;
+  }
+  // The Registrar's chosen signature / seal are previewed inside the editor without touching the saved HTML.
+  function setEditorSigPreview(sigB64, sealB64){ ED.sig = sigB64; ED.seal = sealB64; applySigPreview(); }
+
   function openCertificateEditor(appId, onClose){
-    ED.appId = appId; ED.onClose = onClose || null; ED.dirty = false;
-    return api("/api/applications/"+appId+"/certificate-editor").then(function(res){
-      ED.basedOn = res.updatedAt; ED.editable = res.editable;
+    ED.appId = appId; ED.onClose = onClose || null;
+    document.getElementById("editor-overlay").classList.add("open");
+    return Promise.all([api("/api/applications/"+appId+"/certificate-editor"), ensureTiny()]).then(function(r){
+      var res = r[0];
+      ED.basedOn = res.updatedAt; ED.editable = res.editable; ED.canSetMargins = res.canSetMargins; ED.margins = res.margins || DEFAULT_MARGINS;
       document.getElementById("editor-title").textContent = "Certificate — " + res.certTypeLabel;
-      document.getElementById("editor-sub").textContent = res.applicationCode + " · " + res.studentName + (res.saved ? " · edited copy" : " · generated from template") + " · the reference number, date, QR code, signature and seal are added automatically when it is issued";
-      edPage().innerHTML = res.html;
-      edPage().setAttribute("contenteditable", res.editable ? "true" : "false");
-      document.querySelectorAll("#editor-toolbar button, #editor-toolbar select, #editor-toolbar input, #editor-save, #editor-reset").forEach(function(b){ b.disabled = !res.editable; });
+      document.getElementById("editor-sub").textContent = res.applicationCode + " · " + res.studentName + (res.saved ? " · edited copy" : " · generated from template") +
+        " · reference no., date, QR code, signature and seal are added when it is issued";
+      TINY.setContent(res.html); TINY.undoManager.clear(); TINY.setDirty(false);
+      TINY.mode.set(res.editable ? "design" : "readonly");
+      document.getElementById("mg-fields").style.display = res.canSetMargins ? "inline" : "none";
+      document.getElementById("mg-note").textContent = res.canSetMargins
+        ? "The Registrar's office sets the final margins; they are used for the letterhead page and the issued document."
+        : "Standard margins (set by the Registrar's office): top "+ED.margins.top+", right "+ED.margins.right+", bottom "+ED.margins.bottom+", left "+ED.margins.left+" mm. Letterhead is applied only by the Registrar's office.";
+      document.getElementById("editor-preview-lh").style.display = res.canSetMargins ? "inline-block" : "none";
+      ["editor-save","editor-reset"].forEach(function(id){ document.getElementById(id).disabled = !res.editable; });
       document.getElementById("editor-save-confirm").style.display = "none";
-      edRefreshStatus();
-      document.getElementById("editor-overlay").classList.add("open");
-      edPage().focus();
-    }).catch(function(e){ alert(e.message || "Could not open the editor."); });
+      applyMargins(); applySigPreview(); edRefreshStatus();
+      TINY.focus();
+    }).catch(function(e){ document.getElementById("editor-overlay").classList.remove("open"); alert((e && e.message) || "Could not open the editor."); });
   }
   function closeCertificateEditor(){
-    if(ED.dirty && !confirm("You have unsaved changes. Close without saving?")) return;
+    if(TINY && TINY.isDirty() && !confirm("You have unsaved changes. Close without saving?")) return;
     document.getElementById("editor-overlay").classList.remove("open");
     if(ED.onClose) ED.onClose();
   }
   function saveCertificateEditor(force){
-    return api("/api/applications/"+ED.appId+"/certificate-html", {method:"PUT", body: JSON.stringify({html: edPage().innerHTML, basedOn: ED.basedOn, force: !!force})})
+    var body = {html: TINY.getContent(), basedOn: ED.basedOn, force: !!force};
+    if(ED.canSetMargins) body.margins = ED.margins;
+    return api("/api/applications/"+ED.appId+"/certificate-html", {method:"PUT", body: JSON.stringify(body)})
       .then(function(res){
-        ED.basedOn = res.updatedAt; ED.dirty = false;
+        ED.basedOn = res.updatedAt; TINY.setDirty(false);
         var c = document.getElementById("editor-save-confirm"); c.style.display = "inline"; setTimeout(function(){ c.style.display = "none"; }, 2500);
         return true;
       }).catch(function(e){
@@ -1233,56 +1373,72 @@
         alert((e && e.message) || "Could not save."); return false;
       });
   }
-  document.getElementById("editor-toolbar").addEventListener("mousedown", function(e){
-    // keep the text selection while a toolbar button is clicked
-    if(e.target.closest("button")) e.preventDefault();
-  });
-  document.getElementById("editor-toolbar").addEventListener("click", function(e){
-    var b = e.target.closest("button[data-cmd]"); if(!b || !ED.editable) return;
-    edPage().focus();
-    document.execCommand("styleWithCSS", false, true);
-    document.execCommand(b.dataset.cmd, false, null);
-    ED.dirty = true; edRefreshStatus();
-  });
-  document.getElementById("editor-fontsize").addEventListener("change", function(){
-    if(!this.value) return;
-    edPage().focus(); document.execCommand("styleWithCSS", false, false);   // <font size> survives the server-side clean-up; CSS keywords would not
-    document.execCommand("fontSize", false, this.value); this.value = ""; ED.dirty = true;
-  });
-  document.getElementById("editor-fontname").addEventListener("change", function(){
-    if(!this.value) return;
-    edPage().focus(); document.execCommand("styleWithCSS", false, true);
-    document.execCommand("fontName", false, this.value); this.value = ""; ED.dirty = true;
-  });
-  document.getElementById("editor-color").addEventListener("input", function(){ edPage().focus(); document.execCommand("styleWithCSS", false, true); document.execCommand("foreColor", false, this.value); ED.dirty = true; });
-  document.getElementById("editor-hilite").addEventListener("input", function(){ edPage().focus(); document.execCommand("styleWithCSS", false, true); document.execCommand("hiliteColor", false, this.value); ED.dirty = true; });
-  edPage().addEventListener("input", function(){ ED.dirty = true; edRefreshStatus(); });
-  edPage().addEventListener("paste", function(e){
-    // paste as plain text: pasted Word/web markup would bring styles the certificate must not carry
-    e.preventDefault();
-    var t = (e.clipboardData || window.clipboardData).getData("text/plain");
-    document.execCommand("insertText", false, t);
-  });
   document.getElementById("editor-save").addEventListener("click", function(){ saveCertificateEditor(false); });
   document.getElementById("editor-close").addEventListener("click", closeCertificateEditor);
   document.getElementById("editor-reset").addEventListener("click", function(){
     if(!confirm("Discard all manual edits to this certificate and regenerate it from the template and the student's records?")) return;
     api("/api/applications/"+ED.appId+"/certificate-html/reset", {method:"POST"}).then(function(res){
-      edPage().innerHTML = res.html; ED.basedOn = res.updatedAt; ED.dirty = false; edRefreshStatus();
+      TINY.setContent(res.html); TINY.undoManager.clear(); TINY.setDirty(false); ED.basedOn = res.updatedAt; edRefreshStatus();
     }).catch(function(e){ alert(e.message); });
   });
-  // Show the Registrar's chosen signature / seal inside the editor without changing the saved HTML.
-  function setEditorSigPreview(sigB64, sealB64){
-    var st = document.getElementById("editor-sigstyle");
-    if(!st){ st = document.createElement("style"); st.id = "editor-sigstyle"; document.head.appendChild(st); }
-    var css = "";
-    if(sigB64) css += '#editor-page .sig-token[data-token="signature"]{min-width:150px;min-height:56px;color:transparent;border-color:transparent;background:url("'+sigB64+'") no-repeat left center/contain;}';
-    if(sealB64) css += '#editor-page .sig-token[data-token="seal"]{min-width:100px;min-height:100px;color:transparent;border-color:transparent;background:url("'+sealB64+'") no-repeat left center/contain;}';
-    st.textContent = css;
+  document.getElementById("mg-apply").addEventListener("click", function(){
+    var m = {};
+    ["top","right","bottom","left"].forEach(function(k){ m[k] = Number(document.getElementById("mg-"+k).value); });
+    var bad = ["top","right","bottom","left"].some(function(k){ return !isFinite(m[k]) || m[k] < 0 || m[k] > 120; }) || m.left + m.right > 150 || m.top + m.bottom > 260;
+    if(bad){ alert("Margins must be between 0 and 120 mm (left+right under 150, top+bottom under 260)."); return; }
+    ED.margins = m; applyMargins(); TINY.setDirty(true);
+  });
+  document.getElementById("mg-default").addEventListener("click", function(){ ED.margins = Object.assign({}, DEFAULT_MARGINS); applyMargins(); TINY.setDirty(true); });
+
+  // ---- Registrar-only: preview on the confidential letterhead, then print / save as PDF ----
+  var LH_URL = null;
+  function refreshLetterheadStatus(){
+    api("/api/letterhead/status").then(function(r){
+      document.getElementById("lh-status").textContent = r.present ? "A letterhead is on file. Upload a new image to replace it." : "No letterhead uploaded yet — certificates will be issued without one until you upload it.";
+    }).catch(function(){});
   }
+  document.getElementById("lh-upload").addEventListener("click", function(){
+    var f = document.getElementById("lh-file").files[0];
+    if(!f){ alert("Choose the letterhead image first."); return; }
+    var r = new FileReader();
+    r.onload = function(){
+      api("/api/letterhead", {method:"PUT", body: JSON.stringify({imageBase64: r.result})}).then(function(){
+        LH_URL = null; document.getElementById("lh-file").value = ""; refreshLetterheadStatus(); alert("Letterhead saved.");
+      }).catch(function(e){ alert(e.message || "Upload failed."); });
+    };
+    r.readAsDataURL(f);
+  });
+  function fetchLetterhead(){
+    if(LH_URL) return Promise.resolve(LH_URL);
+    return fetch("/api/letterhead", {headers: {Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY)}}).then(function(r){
+      if(!r.ok) return r.json().then(function(b){ throw (b && b.error) || {message: "Could not load the letterhead."}; });
+      return r.blob();
+    }).then(function(b){ LH_URL = URL.createObjectURL(b); return LH_URL; });
+  }
+  document.getElementById("editor-preview-lh").addEventListener("click", function(){
+    fetchLetterhead().then(function(lh){
+      var html = TINY.getContent()
+        .split("{{CERT_NO}}").join("(assigned on issue)").split("{{QR_TOKEN}}").join("(assigned on issue)")
+        .split("{{ISSUE_DATE}}").join(new Date().toLocaleDateString("en-GB", {day:"2-digit", month:"short", year:"numeric"}));
+      var doc = new DOMParser().parseFromString("<body>"+html+"</body>", "text/html");
+      [["signature", ED.sig, 60], ["seal", ED.seal, 100]].forEach(function(t){
+        doc.querySelectorAll('.sig-token[data-token="'+t[0]+'"]').forEach(function(el){
+          if(!t[1]) return;
+          var img = doc.createElement("img"); img.src = t[1]; img.style.maxHeight = t[2]+"px"; el.replaceWith(img);
+        });
+      });
+      document.getElementById("lh-preview-slot").innerHTML = lhPageHtml(doc.body.innerHTML, ED.margins, lh, null);
+      document.getElementById("lh-preview-overlay").classList.add("open");
+      var c = document.querySelector("#lh-preview-slot .lh-content");
+      document.getElementById("lh-preview-warn").textContent = c.scrollHeight > c.clientHeight + 2
+        ? "Warning: the text is longer than one page and the bottom is cut off. Reduce the margins or shorten the text."
+        : "This is how the issued page will look. Adjust the margins in the editor if it clashes with the letterhead.";
+    }).catch(function(e){ alert((e && e.message) || "Could not load the letterhead."); });
+  });
+  document.getElementById("lh-preview-close").addEventListener("click", function(){ document.getElementById("lh-preview-overlay").classList.remove("open"); });
 
   // ---------------- REGISTRAR ----------------
-  function loadRegistrarScreen(){ refreshRegistrarQueue(); refreshIssuedLog(); }
+  function loadRegistrarScreen(){ refreshRegistrarQueue(); refreshIssuedLog(); refreshLetterheadStatus(); }
   function refreshRegistrarQueue(){
     api("/api/registrar/queue").then(function(apps){
       var wrap = document.getElementById("registrar-ledger");
@@ -1395,18 +1551,13 @@
       .then(function(res){
         document.getElementById("issue-overlay").classList.remove("open");
         setEditorSigPreview(null, null);
-        showCertificate(res.certificate, res.html);
+        showCertificate(res.certificate, res.html, res.margins, res.letterhead);
         refreshRegistrarQueue(); refreshIssuedLog();
       }).catch(function(e2){ alert(e2.message); });
   });
-  function showCertificate(cert, html){
+  function showCertificate(cert, html, margins, letterhead){
     document.getElementById("registrar-issued-panel").style.display = "block";
-    document.getElementById("certificate-slot").innerHTML =
-      '<div class="cert-wrap print-target">'+
-        '<img class="letterhead-band" src="/assets/letterhead-header.jpg" alt="">'+
-        '<div class="cert-body">'+html+'<div id="qr-canvas"></div></div>'+
-        '<img class="letterhead-band" src="/assets/letterhead-footer.jpg" alt="">'+
-      '</div>';
+    document.getElementById("certificate-slot").innerHTML = '<div class="lh-scroll">'+lhPageHtml(html, margins, letterhead, "qr-canvas")+'</div>';
     document.getElementById("qr-canvas").innerHTML = "";
     try{ new QRCode(document.getElementById("qr-canvas"), {text: window.location.origin + "/?verify=" + cert.qr_verification_token, width:84, height:84, colorDark:"#1C2333", colorLight:"#FFFFFF"}); }
     catch(e){ document.getElementById("qr-canvas").textContent = "[QR: "+cert.qr_verification_token+"]"; }
@@ -1425,7 +1576,7 @@
     loadCertificateDataPanel();
   }
   // ---------------- CERTIFICATE DATA PANEL (Super Admin) ----------------
-  var CD_PROFILE_KEYS = ["gender","current_semester","completed_semester","admission_month_year","admission_academic_year","admission_route","completion_month_year","completion_year","cgpa","cgpa_scale","abc_id","foundation_batch","hostel_since","financial_aid_percent","address","adept_scores"];
+  var CD_PROFILE_KEYS = ["gender","current_semester","completed_semester","admission_month_year","admission_academic_year","admission_route","completion_month_year","completion_year","cgpa","cgpa_scale","abc_id","foundation_batch","hostel_since","financial_aid_percent","address"];
   var CS_KEYS = ["bank_account_number","bank_ifsc","bank_name","bank_branch","bank_branch_code","cgpa_scale","mysy_notify_email","registry_email"];
   function flash(id){ var c = document.getElementById(id); c.style.display = "inline"; setTimeout(function(){ c.style.display = "none"; }, 2500); }
   function loadCertificateDataPanel(){
@@ -1435,6 +1586,7 @@
       sel.innerHTML = '<option value="">Choose a student…</option>' + students.map(function(u){ return '<option value="'+u.user_id+'">'+escapeHtml(u.name)+' ('+escapeHtml(u.username)+')</option>'; }).join("");
     });
     api("/api/programmes").then(function(list){
+      document.getElementById("fs-programme").innerHTML = '<option value="">Choose a programme…</option>' + list.map(function(p){ return '<option value="'+p.programme_id+'">'+escapeHtml(p.name)+'</option>'; }).join("");
       document.getElementById("cd-programmes").innerHTML = list.map(function(p){
         return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><span style="flex:1;font-size:13px;">'+escapeHtml(p.name)+'</span>'+
           '<input type="text" data-prog="'+p.programme_id+'" value="'+(p.duration_years||"")+'" placeholder="years" style="width:70px;margin:0;">'+
@@ -1451,9 +1603,12 @@
     api("/api/users/"+this.value+"/profile").then(function(u){
       var d = u.profile_data || {};
       CD_PROFILE_KEYS.forEach(function(k){
-        var v = d[k]; if(v && typeof v === "object") v = JSON.stringify(v);
+        var v = d[k];
         document.getElementById("cd-"+k).value = (v === undefined || v === null) ? "" : v;
       });
+      [0,1].forEach(function(i){ ["mcq","situation","interview","total"].forEach(function(f){
+        var row = (d.adept_scores || [])[i] || {}; document.getElementById("cd-adept-"+i+"-"+f).value = row[f] || "";
+      }); });
       form.style.display = "block";
     }).catch(function(e){ alert(e.message); });
   });
@@ -1461,7 +1616,47 @@
     var id = document.getElementById("cd-student").value; if(!id) return;
     var data = {};
     CD_PROFILE_KEYS.forEach(function(k){ data[k] = document.getElementById("cd-"+k).value; });
+    var adept = [];
+    [0,1].forEach(function(i){
+      var row = {}; ["mcq","situation","interview","total"].forEach(function(f){ row[f] = document.getElementById("cd-adept-"+i+"-"+f).value.trim(); });
+      if(row.mcq || row.situation || row.interview || row.total) adept.push(row);
+    });
+    if(adept.length) data.adept_scores = adept;
     api("/api/users/"+id, {method:"PATCH", body: JSON.stringify({profileData: data})}).then(function(){ flash("cd-student-confirm"); }).catch(function(e){ alert(e.message); });
+  });
+  // ---- fee structure editor ----
+  (function(){
+    var h = "";
+    for(var y = 1; y <= 5; y++){
+      h += '<tr><td>Year '+y+'</td>'+["tuitionSemester","tuitionYear","residenceSemester","residenceYear"].map(function(f){ return '<td><input type="text" data-fs="'+y+'-'+f+'" style="margin:0;"></td>'; }).join("")+'</tr>';
+    }
+    document.getElementById("fs-rows").innerHTML = h;
+  })();
+  function fsFill(rows){
+    document.querySelectorAll("#fs-rows input").forEach(function(i){ i.value = ""; });
+    var map = {tuitionSemester:"tuition_semester", tuitionYear:"tuition_year", residenceSemester:"residence_semester", residenceYear:"residence_year"};
+    rows.forEach(function(r){ Object.keys(map).forEach(function(f){
+      var el = document.querySelector('[data-fs="'+r.year_no+'-'+f+'"]'); if(el && r[map[f]] !== null) el.value = Number(r[map[f]]);
+    }); });
+  }
+  var FS_REQ = 0;
+  function fsLoad(){
+    var pid = document.getElementById("fs-programme").value; if(!pid) return;
+    var mine = ++FS_REQ;   // ignore a slower, older response if the programme was changed again meanwhile
+    api("/api/fee-structures?programmeId="+pid+"&batch="+encodeURIComponent(document.getElementById("fs-batch").value.trim())).then(function(r){ if(mine === FS_REQ) fsFill(r.rows); }).catch(function(e){ alert(e.message); });
+  }
+  document.getElementById("fs-load").addEventListener("click", fsLoad);
+  document.getElementById("fs-programme").addEventListener("change", fsLoad);
+  document.getElementById("fs-save").addEventListener("click", function(){
+    var pid = document.getElementById("fs-programme").value; if(!pid){ alert("Choose a programme."); return; }
+    var rows = [];
+    for(var y = 1; y <= 5; y++){
+      var r = {yearNo: y};
+      ["tuitionSemester","tuitionYear","residenceSemester","residenceYear"].forEach(function(f){ r[f] = document.querySelector('[data-fs="'+y+'-'+f+'"]').value.trim(); });
+      rows.push(r);
+    }
+    api("/api/fee-structures", {method:"PUT", body: JSON.stringify({programmeId: Number(pid), batch: document.getElementById("fs-batch").value.trim() || null, rows: rows})})
+      .then(function(){ flash("fs-confirm"); }).catch(function(e){ alert(e.message); });
   });
   document.getElementById("cd-programmes").addEventListener("click", function(e){
     var b = e.target.closest("button[data-prog-save]"); if(!b) return;

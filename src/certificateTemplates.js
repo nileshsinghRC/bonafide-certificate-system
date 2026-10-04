@@ -102,25 +102,99 @@ function bonafideOpening(F, hePron) {
     ", is a bonafide student of Anant National University. " + currentlyPursuing(F, hePron) + "</p>"
   );
 }
-function bankDetails(F) {
-  return (
-    "<p><b>Bank Account Details of the University:</b><br>Name of account: Anant National University<br>Account Number: " +
-    F("bank_account_number") + "<br>IFSC Code: " + F("bank_ifsc") +
-    "<br>Bank: " + F("bank_name") + "<br>Branch: " + F("bank_branch") + " \u00b7 Branch code: " + F("bank_branch_code") + "</p>"
-  );
+// ---- Bank-loan templates (5, 6, 7): reproduced from the university's Word templates ----
+function inr(n) { return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 }); }
+function feeBlank(why) {
+  var def = BY_KEY.fee_structure;
+  return '<mark class="blank" data-field="fee_structure" data-ph="' + esc(def.placeholder) + '" title="' +
+    esc(def.label + " \u2014 " + why + " \u2014 source: " + def.source) + '">' + esc(def.placeholder) + "</mark>";
 }
+function cellValue(v, why) { return v === null || v === undefined ? feeBlank(why) : inr(v); }
+
+// Opening paragraph, word for word from templates 5/6/7.
+function bankOpening(F) {
+  return '<p style="text-align:justify;">This is to certify that ' + F("honorific") + " " + F("student_name") +
+    ", bearing Student ID No " + F("enrolment_no") + " is a bonafide student of Anant National University. " +
+    F("he_cap") + " is currently pursuing the " + F("current_semester") + " semester of the " + F("programme_years_word") +
+    "-year of the " + F("programme_name") + " programme for the batch " + F("batch") + ".</p>";
+}
+// "Ref: ......  Date: ......" on one line, Ref left and Date right, as in the templates.
+function bankRefDate(cert) {
+  var no = cert && cert.certificate_number ? esc(cert.certificate_number) : "{{CERT_NO}}";
+  var dt = cert && cert.issued_at
+    ? esc(new Date(cert.issued_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }))
+    : "{{ISSUE_DATE}}";
+  return '<table style="width:100%;border-collapse:collapse;border:0;" border="0"><tbody><tr>' +
+    '<td style="border:0;text-align:left;">Ref: ' + no + '</td><td style="border:0;text-align:right;">Date: ' + dt + "</td></tr></tbody></table>";
+}
+function bankHeading(text) {
+  return '<h2 class="cert-heading" style="text-align:center;">' + esc(text) + "</h2>";
+}
+// Bank account block, word for word. `branchSuffix` keeps the template-5 ";" after the branch.
+function bankDetails(F, branchSuffix) {
+  return '<p style="margin-bottom:0;"><b>Bank Account Details of the University:</b></p>' +
+    "<p>Name of account: Anant National University<br>Account Number: " + F("bank_account_number") +
+    "<br>IFSC CODE: " + F("bank_ifsc") + "<br>Bank: " + F("bank_name") +
+    "<br>Branch: " + F("bank_branch") + (branchSuffix || "") + "<br>Branch code: " + F("bank_branch_code") + "</p>";
+}
+function bankTypeLine(label) {
+  return '<p class="cert-type-footer" style="text-align:right;margin-top:40px;">' + esc(label) + "</p>";
+}
+var TD = "border:1px solid #000;padding:2px 4px;text-align:center;vertical-align:middle;font-size:10pt;";
+var TH = TD + "font-weight:bold;";
+function td(content, extra) { return '<td style="' + TD + (extra || "") + '">' + content + "</td>"; }
+function th(content, attrs) { return "<th " + (attrs || "") + ' style="' + TH + '">' + content + "</th>"; }
+
+// Template 5: Year | Tuition fees semester wise (2 cols) | Tuition fees year wise (2 cols) | Residence and mess fee (2 cols)
+function feeTableFinAid(F, values) {
+  var ft = values.fee_table || { rows: [{ year: 1 }], pct: null, dayScholar: false };
+  var after = '<span>After </span>' + F("fin_aid_percent") + " Scholarship";
+  var h = '<table style="border-collapse:collapse;width:100%;" border="1"><colgroup><col style="width:9.6%"><col style="width:15.4%"><col style="width:16%"><col style="width:15.4%"><col style="width:15.2%"><col style="width:14.2%"><col style="width:14.2%"></colgroup><tbody>' +
+    "<tr>" + th("Year", 'rowspan="2"') + th("Tuition fees semester wise (INR)", 'colspan="2"') +
+    th("Tuition fees year wise (INR)", 'colspan="2"') + th("Residence and mess fee (INR)", 'colspan="2"') + "</tr>" +
+    "<tr>" + th("Without Scholarship") + th(after) + th("Without Scholarship") + th(after) + th("Semester fees") + th("Yearly fees") + "</tr>";
+  ft.rows.forEach(function (r) {
+    var res = ft.dayScholar ? ["N/A", "N/A"] : [cellValue(r.resSem, "residence & mess fee, semester"), cellValue(r.resYear, "residence & mess fee, year")];
+    h += "<tr>" + td("<b>Year " + r.year + "</b>") +
+      td(cellValue(r.tuitionSem, "tuition per semester, year " + r.year)) +
+      td(cellValue(r.tuitionSemAfter, "needs the tuition fee and the scholarship %")) +
+      td(cellValue(r.tuitionYear, "tuition per year, year " + r.year)) +
+      td(cellValue(r.tuitionYearAfter, "needs the tuition fee and the scholarship %")) +
+      td(res[0]) + td(res[1]) + "</tr>";
+  });
+  return h + "</tbody></table>";
+}
+// Template 6: Year | Tuition sem | Tuition year | Residence & mess sem | Residence & mess year
+function feeTableGeneral(F, values) {
+  var ft = values.fee_table || { rows: [{ year: 1 }], pct: null, dayScholar: false };
+  var h = '<table style="border-collapse:collapse;width:100%;" border="1"><colgroup><col style="width:11%"><col style="width:24%"><col style="width:21.7%"><col style="width:21.7%"><col style="width:21.6%"></colgroup><tbody>' +
+    "<tr>" + th("Year") + th("Tuition fees semester wise (INR)") + th("Tuition fees year wise (INR)") +
+    th("Residence and mess fee (INR) semester wise") + th("Residence and mess fee (INR) Year wise") + "</tr>";
+  ft.rows.forEach(function (r) {
+    var res = ft.dayScholar ? ["N/A", "N/A"] : [cellValue(r.resSem, "residence & mess fee, semester"), cellValue(r.resYear, "residence & mess fee, year")];
+    h += "<tr>" + td("<b>Year " + r.year + "</b>") + td(cellValue(r.tuitionSem, "tuition per semester, year " + r.year)) +
+      td(cellValue(r.tuitionYear, "tuition per year, year " + r.year)) + td(res[0]) + td(res[1]) + "</tr>";
+  });
+  return h + "</tbody></table>";
+}
+// Template 7: ADEPT score table. "Score" spans the score rows (the template has two).
 function adeptTable(F, values) {
-  var a = values && values.adept_scores;
-  if (a && typeof a === "object") {
-    var rows = Object.keys(a).map(function (k) {
-      return "<tr><td>" + esc(k) + "</td><td>" + esc(a[k]) + "</td></tr>";
-    }).join("");
-    return '<table class="adept-table"><tbody><tr><th>Section</th><th>Marks</th></tr>' + rows + "</tbody></table>";
-  }
-  if (typeof a === "string" && a) return "<p>" + esc(a) + "</p>";
+  var rows = values.adept_scores;
   var def = BY_KEY.adept_scores;
-  return '<p><mark class="blank" data-field="adept_scores" data-ph="' + esc(def.placeholder) + '" title="' +
-    esc(def.label + " \u2014 source: " + def.source) + '">' + esc(def.placeholder) + "</mark></p>";
+  function blank(label) {
+    return '<mark class="blank" data-field="adept_scores" data-ph="(Autogenerated)" title="' + esc("ADEPT " + label + " \u2014 source: " + def.source) + '">(Autogenerated)</mark>';
+  }
+  var list = rows && rows.length ? rows : [null, null];
+  var body = "";
+  list.forEach(function (r, i) {
+    body += "<tr>" + (i === 0 ? '<td style="' + TD + 'width:12%;" rowspan="' + list.length + '">Score</td>' : "") +
+      td(r && r.mcq ? esc(r.mcq) : blank("MCQ")) + td(r && r.situation ? esc(r.situation) : blank("Situation Test")) +
+      td(r && r.interview ? esc(r.interview) : blank("Interview")) + td(r && r.total ? esc(r.total) : blank("Total score")) + "</tr>";
+  });
+  return '<table style="border-collapse:collapse;width:90%;margin-left:4%;" border="1"><tbody>' +
+    "<tr>" + th("Anant Design Entrance &amp; Proficiency Test (ADEPT)", 'colspan="5"') + "</tr>" +
+    "<tr>" + td("Test") + td("MCQ", "text-align:left;") + td("Situation Test", "text-align:left;") + td("Interview", "text-align:left;") + td("Total score", "text-align:left;") + "</tr>" +
+    body + "</tbody></table>";
 }
 
 const RENDERERS = {
@@ -190,35 +264,32 @@ const RENDERERS = {
       signatureBlock(cert) + verificationFooter(cert) + typeFooter("VISA & Passport \u2014 General")
     );
   },
-  BANK_LOAN_FIN_AID: function (app, cert, F) {
+  BANK_LOAN_FIN_AID: function (app, cert, F, values) {
     return (
-      refDate(cert) + heading("TO WHOMSOEVER IT MAY CONCERN") +
-      bonafideOpening(F, F("he_cap")) +
-      "<p>The fee structure of the " + F("programme_name") + " programme, with " +
-      F("fin_aid_percent") + ", is mentioned below (see fee schedule provided separately by the Fees &amp; Financial Aid Department).</p>" +
-      bankDetails(F) +
-      "<p>The certificate is issued on receipt of an express request from the student and is valid for the purpose of an education loan from the bank only.</p>" +
-      signatureBlock(cert) + verificationFooter(cert) + typeFooter("Bank Loan \u2014 General, with Financial Aid")
+      bankRefDate(cert) + bankHeading("TO WHOMSOEVER IT MAY CONCERN") + bankOpening(F) +
+      '<p style="text-align:justify;">The fee structure of ' + F("programme_name") + " <b>program</b> with <b>" + F("fin_aid_percent") +
+      "</b> scholarship/financial aid on tuition fee is mentioned below.</p>" +
+      feeTableFinAid(F, values) + bankDetails(F, ";") +
+      '<p style="text-align:justify;">The certificate is issued on receipt of an express request from the student and is valid for the purpose of an education loan from the bank only.</p>' +
+      signatureBlock(cert) + bankTypeLine("Bank Loan \u2014 General, with Financial Aid")
     );
   },
-  BANK_LOAN_GENERAL: function (app, cert, F) {
+  BANK_LOAN_GENERAL: function (app, cert, F, values) {
     return (
-      refDate(cert) + heading("TO WHOMSOEVER IT MAY CONCERN") +
-      bonafideOpening(F, F("he_cap")) +
-      "<p>The fee structure of the " + F("programme_name") + " programme is mentioned below (see fee schedule provided separately by the Fees Department).</p>" +
-      bankDetails(F) +
-      "<p>The letter is issued on receipt of an express request from the student and is valid for the purpose of an education loan from the bank only.</p>" +
-      signatureBlock(cert) + verificationFooter(cert) + typeFooter("Bank Loan \u2014 General")
+      bankRefDate(cert) + bankHeading("TO WHOMSOEVER IT MAY CONCERN") + bankOpening(F) +
+      '<p style="text-align:justify;">The fee structure of ' + F("programme_name") + " program is mentioned below.</p>" +
+      feeTableGeneral(F, values) + bankDetails(F, "") +
+      '<p style="text-align:justify;">The letter is issued on receipt of an express request from the student and is valid for the purpose of an education loan from the bank only.</p>' +
+      signatureBlock(cert) + bankTypeLine("Bank Loan \u2014 General")
     );
   },
   BANK_LOAN_ADEPT: function (app, cert, F, values) {
     return (
-      refDate(cert) + heading("TO WHOMSOEVER IT MAY CONCERN") +
-      bonafideOpening(F, F("he_cap")) +
-      "<p>Below are the marks scored by the student in ADEPT \u2014 a university-level entrance test for the Design Programme (score sheet provided separately by the Admission Office):</p>" +
+      bankRefDate(cert) + bankHeading("TO WHOM SO EVER IT MAY CONCERN") + bankOpening(F) +
+      '<p style="text-align:justify;">Below are the marks scored by the students in ADEPT- a university level entrance test for Design Programme:</p>' +
       adeptTable(F, values) +
-      "<p>This certificate is issued on request from the student and is valid for the purpose of an education loan only.</p>" +
-      signatureBlock(cert) + verificationFooter(cert) + typeFooter("Bank Loan \u2014 ADEPT Score")
+      '<p style="text-align:justify;margin-top:12px;">This certificate is issued on request from the student and valid for purpose of education loan only.</p>' +
+      signatureBlock(cert) + bankTypeLine("Bank Loan \u2014 ADEPT Score")
     );
   },
   FIELD_RESEARCH: function (app, cert, F) {

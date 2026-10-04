@@ -11,8 +11,40 @@ const XLSX = require("xlsx");
 const { pool } = require("./src/db");
 const { signToken, requireAuth, requireRole } = require("./src/auth");
 const { renderCertificateHtml, fieldsUsedBy, RENDERER_CODES } = require("./src/certificateTemplates");
-const { resolveAll, BY_KEY, PROFILE_KEYS, normGender } = require("./src/certificateFields");
+const { resolveAll, BY_KEY, PROFILE_KEYS, normGender, normaliseAdept } = require("./src/certificateFields");
 const { sanitizeCertificateHtml, findUnresolvedBlanks, finalizeHtml } = require("./src/certificateHtml");
+
+// ---------------- Page model + CONFIDENTIAL letterhead ----------------
+// Page is A4. Default margins (mm) are taken from the university's sample_margin.docx:
+// top 567 twips = 10 mm, left/right 1797 twips = 31.7 mm, bottom 0. The Registrar sets the
+// final margins before issuing; every other role edits at the default.
+const DEFAULT_MARGINS_MM = { top: 10, right: 31.7, bottom: 0, left: 31.7 };
+function cleanMargins(m) {
+  if (!m || typeof m !== "object") return null;
+  const out = {};
+  for (const k of ["top", "right", "bottom", "left"]) {
+    const v = Number(m[k]);
+    if (!isFinite(v) || v < 0 || v > 120) return null;
+    out[k] = Math.round(v * 10) / 10;
+  }
+  if (out.left + out.right > 150 || out.top + out.bottom > 260) return null;
+  return out;
+}
+function marginsFor(row) { return cleanMargins(row && row.page_margins) || DEFAULT_MARGINS_MM; }
+
+// The letterhead is CONFIDENTIAL. It is not part of the code repository or /public: the Registrar's
+// office uploads it once and it is kept in the database (app_settings.letterhead_a4). It is only ever handed
+// out (a) to the Registrar's office, and (b) embedded in an ISSUED certificate for the student who owns it.
+let LETTERHEAD_CACHE; // undefined = not loaded yet, null = none uploaded
+async function loadLetterhead() {
+  if (LETTERHEAD_CACHE !== undefined) return LETTERHEAD_CACHE;
+  const r = await pool.query("SELECT setting_value FROM app_settings WHERE setting_key = 'letterhead_a4'");
+  LETTERHEAD_CACHE = r.rows[0] && r.rows[0].setting_value ? r.rows[0].setting_value : null;
+  return LETTERHEAD_CACHE;
+}
+async function letterheadFor(role, ownsCertificate) {
+  return role === "registrar_admin" || (role === "student" && ownsCertificate) ? loadLetterhead() : null;
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 
@@ -81,10 +113,13 @@ function extractProfile(raw) {
     let v = raw[key] !== undefined ? raw[key] : raw[snakeToCamel(key)];
     if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) return;
     if (key === "adept_scores") {
+      // [{mcq, situation, interview, total}, ...] - up to two score rows, as on the ADEPT bank-loan template
       if (typeof v === "string") {
-        try { const parsed = JSON.parse(v); if (parsed && typeof parsed === "object") v = parsed; } catch (e) { /* keep as free text */ }
+        try { v = JSON.parse(v); } catch (e) { warnings.push("adept_scores must be JSON like [{\"mcq\":\"40\",\"situation\":\"30\",\"interview\":\"20\",\"total\":\"90\"}]"); return; }
       }
-      profile[key] = v;
+      const norm = normaliseAdept(v);
+      if (!norm) { warnings.push("adept_scores needs at least one of mcq / situation / interview / total"); return; }
+      profile[key] = norm;
       return;
     }
     v = String(v).trim();
@@ -278,7 +313,12 @@ async function loadCertificateValues(db, application) {
   }
 
   const feeSnapshot = application.fee_snapshot || buildFeeSnapshot(student);
-  const values = resolveAll({ application: appCopy, student, programme, settings, feeSnapshot });
+  let feeRows = [];
+  if (programme) {
+    const fr = await db.query("SELECT * FROM fee_structures WHERE programme_id = $1 ORDER BY year_no", [programme.programme_id]);
+    feeRows = fr.rows;
+  }
+  const values = resolveAll({ application: appCopy, student, programme, settings, feeSnapshot, feeRows });
   return { values, appCopy };
 }
 
@@ -708,6 +748,9 @@ app.get("/api/applications/:id/certificate-editor", requireAuth, async (req, res
       studentName: application.student_name,
       certTypeLabel: label ? label.label : "",
       status: application.status,
+      margins: marginsFor(application),
+      defaultMargins: DEFAULT_MARGINS_MM,
+      canSetMargins: req.auth.role === "registrar_admin",
       html,
       saved,
       updatedAt: application.certificate_html_updated_at,
@@ -723,7 +766,7 @@ app.get("/api/applications/:id/certificate-editor", requireAuth, async (req, res
 });
 
 app.put("/api/applications/:id/certificate-html", requireAuth, async (req, res) => {
-  const { html, basedOn, force } = req.body || {};
+  const { html, basedOn, force, margins } = req.body || {};
   if (typeof html !== "string" || !html.trim()) return err(res, 422, "MISSING_HTML", "Provide the certificate html.");
   const client = await pool.connect();
   try {
@@ -744,9 +787,16 @@ app.put("/api/applications/:id/certificate-html", requireAuth, async (req, res) 
     let clean;
     try { clean = sanitizeCertificateHtml(html); }
     catch (e) { if (e.code === "TOO_LARGE") return err(res, 413, "TOO_LARGE", e.message); throw e; }
+    // Only the Registrar's office sets the final page margins.
+    let newMargins = application.page_margins || null;
+    if (margins !== undefined && req.auth.role === "registrar_admin") {
+      const cm = cleanMargins(margins);
+      if (!cm) return err(res, 422, "BAD_MARGINS", "Margins must be 0-120 mm, with left+right under 150 mm and top+bottom under 260 mm.");
+      newMargins = cm;
+    }
     const up = await client.query(
-      "UPDATE applications SET certificate_html = $1, certificate_html_updated_by = $2, certificate_html_updated_at = now() WHERE application_id = $3 RETURNING certificate_html_updated_at",
-      [clean, req.auth.userId, application.application_id]
+      "UPDATE applications SET certificate_html = $1, certificate_html_updated_by = $2, certificate_html_updated_at = now(), page_margins = $4 WHERE application_id = $3 RETURNING certificate_html_updated_at",
+      [clean, req.auth.userId, application.application_id, newMargins ? JSON.stringify(newMargins) : null]
     );
     await client.query(
       "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'EDITED',$5)",
@@ -759,6 +809,33 @@ app.put("/api/applications/:id/certificate-html", requireAuth, async (req, res) 
   } finally {
     client.release();
   }
+});
+
+// Registrar's office only. The raw letterhead is never served to any other role or from /public.
+app.get("/api/letterhead", requireAuth, requireRole("registrar_admin"), async (req, res) => {
+  const lh = await loadLetterhead();
+  const m = lh && lh.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
+  if (!m) return err(res, 404, "NO_LETTERHEAD", "No letterhead has been uploaded yet. Upload it under Letterhead on the Registrar's desk.");
+  res.set("Cache-Control", "private, no-store");
+  res.type(m[1]).send(Buffer.from(m[2], "base64"));
+});
+app.get("/api/letterhead/status", requireAuth, requireRole("registrar_admin"), async (req, res) => {
+  res.json({ present: !!(await loadLetterhead()) });
+});
+// Upload / replace the letterhead (A4 page image, JPEG or PNG). Registrar's office only.
+app.put("/api/letterhead", requireAuth, requireRole("registrar_admin"), async (req, res) => {
+  const { imageBase64 } = req.body || {};
+  if (typeof imageBase64 !== "string" || !/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(imageBase64)) {
+    return err(res, 422, "BAD_IMAGE", "Upload the letterhead as a JPEG or PNG image.");
+  }
+  if (imageBase64.length > 6 * 1024 * 1024) return err(res, 413, "TOO_LARGE", "The letterhead image is too large (limit about 4 MB).");
+  await pool.query(
+    `INSERT INTO app_settings (setting_key, setting_value, updated_by, updated_at) VALUES ('letterhead_a4',$1,$2,now())
+     ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [imageBase64, req.auth.userId]
+  );
+  LETTERHEAD_CACHE = imageBase64;
+  res.json({ ok: true });
 });
 
 // Throw away manual edits and regenerate from the templates + current backend data.
@@ -1086,11 +1163,11 @@ app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requir
     const certRes = await client.query(
       `INSERT INTO certificates
         (application_id, certificate_number, cert_type_id, qr_verification_token, issued_by_user_id,
-         registrar_signature_data, registrar_seal_data, signature_position, seal_position, final_html,
+         registrar_signature_data, registrar_seal_data, signature_position, seal_position, final_html, page_margins,
          signed_at, notified_at, notification_channel)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now(),'EMAIL') RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now(),now(),'EMAIL') RETURNING *`,
       [application.application_id, certNumber, application.cert_type_id, qrToken, req.auth.userId, signatureImageBase64,
-       sealImageBase64 || null, JSON.stringify(sigPos), JSON.stringify(sealPos), finalHtml]
+       sealImageBase64 || null, JSON.stringify(sigPos), JSON.stringify(sealPos), finalHtml, JSON.stringify(marginsFor(application))]
     );
     const cert = certRes.rows[0];
 
@@ -1113,6 +1190,8 @@ app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requir
     res.status(201).json({
       certificate: cert,
       html,
+      margins: marginsFor(cert),
+      letterhead: await letterheadFor(req.auth.role, false),
       downloadUrl: "/api/registrar/certificates/" + cert.certificate_id + "/render",
       notificationQueued: true
     });
@@ -1159,7 +1238,7 @@ app.get("/api/registrar/certificates/:id/render", requireAuth, requireRole("regi
   const row = rows[0];
   if (!row) return err(res, 404, "CERTIFICATE_NOT_FOUND", "No certificate exists with the given ID.");
   const html = await renderIssuedCertificateHtml(pool, row);
-  res.json({ html, registrarSignatureData: row.registrar_signature_data });
+  res.json({ html, registrarSignatureData: row.registrar_signature_data, margins: marginsFor({ page_margins: row.page_margins }), letterhead: await letterheadFor(req.auth.role, false) });
 });
 
 // ============================================================
@@ -1432,6 +1511,62 @@ app.get("/api/settings", requireAuth, async (req, res) => {
   res.json(out);
 });
 
+// ---------------- Fee structure (feeds the fee tables on the Bank Loan certificates) ----------------
+// One set of rows per programme; batch NULL applies to every batch, a batch-specific set wins.
+app.get("/api/fee-structures", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const pid = Number(req.query.programmeId);
+  if (!Number.isInteger(pid)) return err(res, 400, "MISSING_PROGRAMME", "Pass ?programmeId=.");
+  const batch = (req.query.batch || "").trim() || null;
+  const { rows } = await pool.query(
+    "SELECT year_no, tuition_semester, tuition_year, residence_semester, residence_year FROM fee_structures WHERE programme_id = $1 AND COALESCE(batch,'') = COALESCE($2,'') ORDER BY year_no",
+    [pid, batch]
+  );
+  const batches = await pool.query("SELECT DISTINCT batch FROM fee_structures WHERE programme_id = $1 AND batch IS NOT NULL ORDER BY batch", [pid]);
+  res.json({ programmeId: pid, batch, rows, batchesWithOwnFees: batches.rows.map((r) => r.batch) });
+});
+
+app.put("/api/fee-structures", requireAuth, requireRole("super_admin"), async (req, res) => {
+  const { programmeId, batch, rows } = req.body || {};
+  const pid = Number(programmeId);
+  if (!Number.isInteger(pid) || !Array.isArray(rows)) return err(res, 400, "BAD_REQUEST", "programmeId and rows[] are required.");
+  const b = (batch || "").toString().trim() || null;
+  if (b && b.length > 20) return err(res, 422, "BAD_BATCH", "Batch is too long (e.g. 2023-2027).");
+  const num = (v) => {
+    if (v === null || v === undefined || String(v).trim() === "") return null;
+    const n = Number(String(v).replace(/,/g, ""));
+    return isFinite(n) && n >= 0 && n < 1e9 ? n : NaN;
+  };
+  const clean = [];
+  for (const r of rows) {
+    const y = Number(r.yearNo);
+    if (!Number.isInteger(y) || y < 1 || y > 6) return err(res, 422, "BAD_YEAR", "yearNo must be 1-6.");
+    const vals = [num(r.tuitionSemester), num(r.tuitionYear), num(r.residenceSemester), num(r.residenceYear)];
+    if (vals.some((v) => Number.isNaN(v))) return err(res, 422, "BAD_AMOUNT", "Year " + y + ": amounts must be plain non-negative numbers.");
+    if (vals.some((v) => v !== null)) clean.push([y].concat(vals));
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const prog = await client.query("SELECT 1 FROM programmes WHERE programme_id = $1", [pid]);
+    if (!prog.rows[0]) { await client.query("ROLLBACK"); return err(res, 404, "PROGRAMME_NOT_FOUND", "No programme exists with the given ID."); }
+    await client.query("DELETE FROM fee_structures WHERE programme_id = $1 AND COALESCE(batch,'') = COALESCE($2,'')", [pid, b]);
+    for (const c of clean) {
+      await client.query(
+        "INSERT INTO fee_structures (programme_id, batch, year_no, tuition_semester, tuition_year, residence_semester, residence_year, updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        [pid, b, c[0], c[1], c[2], c[3], c[4], req.auth.userId]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true, savedYears: clean.length });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Could not save the fee structure.");
+  } finally {
+    client.release();
+  }
+});
+
 // Bank details / contact e-mails / CGPA scale printed on certificates (Super Admin only).
 app.get("/api/settings/certificate", requireAuth, requireRole("super_admin"), async (req, res) => {
   const { rows } = await pool.query("SELECT setting_key, setting_value FROM app_settings WHERE setting_key = ANY($1)", [CERT_SETTING_KEYS]);
@@ -1560,6 +1695,8 @@ app.get("/api/applications/:id/certificate", requireAuth, async (req, res) => {
     html,
     certificateNumber: row.certificate_number,
     qrToken: row.qr_verification_token,
+    margins: marginsFor({ page_margins: row.page_margins }),
+    letterhead: await letterheadFor(req.auth.role, req.auth.role === "student" && row.student_user_id === req.auth.userId),
     registrarSignatureData: row.registrar_signature_data,
     registrarSealData: row.registrar_seal_data,
     signaturePosition: row.signature_position,
@@ -1598,6 +1735,8 @@ app.get("/api/admin/certificate-fields", requireAuth, requireRole("super_admin")
 // ============================================================
 // STATIC FRONTEND
 // ============================================================
+// Rich-text editor engine (TinyMCE 6, self-hosted - nothing is loaded from a third-party CDN).
+app.use("/vendor/tinymce", express.static(path.join(__dirname, "node_modules", "tinymce"), { maxAge: "7d" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api/")) return err(res, 404, "NOT_FOUND", "No such API route.");

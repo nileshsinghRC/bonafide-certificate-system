@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS applications (
     certificate_html                 TEXT,
     certificate_html_updated_by      UUID REFERENCES users(user_id),
     certificate_html_updated_at      TIMESTAMPTZ,
+    page_margins                       JSONB,        -- {top,right,bottom,left} in mm; NULL = default (see server.js DEFAULT_MARGINS_MM)
     -- Per-request facts the student supplies (VISA: country, eventName, dateFrom, dateTo, sponsorship)
     request_details                   JSONB NOT NULL DEFAULT '{}'::jsonb,
 
@@ -183,6 +184,7 @@ CREATE TABLE IF NOT EXISTS certificates (
     registrar_seal_data          TEXT,          -- base64 data: URL of the uploaded official seal image
     signature_position             JSONB,         -- {top, left} percentages for customized placement
     seal_position                    JSONB,
+    page_margins                       JSONB,        -- margins frozen at issue time
     final_html                         TEXT,         -- frozen certificate body exactly as issued (verify / download / reprint serve this)
     signed_at                    TIMESTAMPTZ,
 
@@ -204,6 +206,21 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_by     UUID REFERENCES users(user_id),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------- FEE STRUCTURES (bank-loan certificate fee tables; see migration 007) ----------------
+CREATE TABLE IF NOT EXISTS fee_structures (
+    fee_structure_id   SERIAL PRIMARY KEY,
+    programme_id       SMALLINT NOT NULL REFERENCES programmes(programme_id) ON DELETE CASCADE,
+    batch              VARCHAR(20),
+    year_no            SMALLINT NOT NULL CHECK (year_no BETWEEN 1 AND 6),
+    tuition_semester   NUMERIC(12,2),
+    tuition_year       NUMERIC(12,2),
+    residence_semester NUMERIC(12,2),
+    residence_year     NUMERIC(12,2),
+    updated_by         UUID REFERENCES users(user_id),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_fee_structures ON fee_structures (programme_id, COALESCE(batch, ''), year_no);
 
 -- ---------------- updated_at trigger ----------------
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$

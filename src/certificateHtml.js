@@ -17,19 +17,24 @@ const MAX_HTML_BYTES = 600 * 1024;
 const COLOR = [/^#[0-9a-f]{3,8}$/i, /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*[\d.]+\s*)?\)$/i];
 const LEN = [/^-?\d+(\.\d+)?(px|pt|em|rem|%)?$/];
 const PCT = [/^\d+(\.\d+)?%$/];
+const SIZE = [/^(auto|\d+(\.\d+)?(px|pt|em|rem|%|mm|cm)?)$/];
+// shorthand like "1px solid #000000" / "4px 8px"; never anything that can load a resource
+const SAFE_SHORT = [/^(?!.*url)[#\w\s().,%-]+$/i];
 
 const SANITIZE_OPTIONS = {
   allowedTags: [
     "p", "br", "div", "span", "b", "strong", "i", "em", "u", "s", "strike", "sub", "sup", "mark", "code",
     "h1", "h2", "h3", "h4", "blockquote", "hr", "ul", "ol", "li", "font",
-    "table", "thead", "tbody", "tr", "td", "th", "img"
+    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "colgroup", "col", "caption", "img"
   ],
   allowedAttributes: {
     "*": ["style", "class", "data-field", "data-ph", "data-token", "title", "align"],
-    td: ["colspan", "rowspan", "style", "class"],
-    th: ["colspan", "rowspan", "style", "class"],
+    table: ["border", "cellpadding", "cellspacing", "width", "style", "class", "align"],
+    td: ["colspan", "rowspan", "style", "class", "width", "height", "align", "valign"],
+    th: ["colspan", "rowspan", "style", "class", "width", "height", "align", "valign"],
+    col: ["span", "width", "style"],
     font: ["size", "color", "face"],
-    img: ["src", "alt", "style", "class"]
+    img: ["src", "alt", "style", "class", "width", "height"]
   },
   allowedClasses: {
     "*": ["cert-heading", "sig-marks", "sig-name", "sig-title", "verify-footer", "cert-type-footer", "blank", "adept-table", "sig-token"]
@@ -50,7 +55,15 @@ const SANITIZE_OPTIONS = {
       "text-indent": LEN,
       "position": [/^(absolute|relative)$/],
       "top": PCT, "left": PCT,
-      "max-width": LEN, "max-height": LEN, "min-height": LEN
+      "max-width": LEN, "max-height": LEN, "min-height": LEN,
+      "width": SIZE, "height": SIZE,
+      "border": SAFE_SHORT, "border-top": SAFE_SHORT, "border-right": SAFE_SHORT, "border-bottom": SAFE_SHORT, "border-left": SAFE_SHORT,
+      "border-collapse": [/^(collapse|separate)$/], "border-spacing": SAFE_SHORT,
+      "border-color": SAFE_SHORT, "border-style": SAFE_SHORT, "border-width": SAFE_SHORT,
+      "padding": SAFE_SHORT, "padding-top": LEN, "padding-right": LEN, "padding-bottom": LEN,
+      "margin": SAFE_SHORT, "margin-right": LEN,
+      "vertical-align": [/^(top|middle|bottom|baseline)$/],
+      "float": [/^(left|right|none)$/], "display": [/^(block|inline|inline-block)$/]
     }
   },
   allowedSchemes: [],
