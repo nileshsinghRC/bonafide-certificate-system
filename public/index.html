@@ -391,6 +391,7 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div><p class="label">University email</p><input type="text" id="new-student-email" placeholder="student@anu.edu.in"></div>
         <div><p class="label">Full name</p><input type="text" id="new-student-name"></div>
+        <div><p class="label">Student ID (enrolment no.)</p><input type="text" id="new-student-id" placeholder="e.g. SDM-2023-00451"></div>
         <div><p class="label">School</p><select id="new-student-school"></select></div>
         <div><p class="label">Programme</p><select id="new-student-programme"></select></div>
         <div><p class="label">Batch</p><input type="text" id="new-student-batch" placeholder="e.g. 2023-2027"></div>
@@ -510,13 +511,23 @@
   <div class="modal">
     <h3>Add user</h3>
     <p class="label">Full name</p><input type="text" id="new-user-name">
-    <p class="label" style="margin-top:10px;">Username</p><input type="text" id="new-user-username">
+    <p class="label" style="margin-top:10px;" id="new-user-username-label">Username</p><input type="text" id="new-user-username">
     <p class="label" style="margin-top:10px;">Role</p><select id="new-user-role"></select>
     <div id="new-user-school-field" style="display:none;">
       <p class="label" style="margin-top:10px;">School they manage</p>
       <select id="new-user-school"></select>
     </div>
-    <p class="label" style="margin-top:10px;">Temporary password</p><input type="text" id="new-user-password" value="changeme123">
+    <div id="new-user-student-fields" style="display:none;">
+      <p class="section-sub" style="margin:8px 0 0;">Students sign in at <code>/student</code> with their university email and a one-time code — no password.</p>
+      <p class="label" style="margin-top:10px;">Student ID (enrolment no.)</p><input type="text" id="nus-student-id" placeholder="e.g. SDM-2023-00451">
+      <p class="label" style="margin-top:10px;">School</p><select id="nus-school"></select>
+      <p class="label" style="margin-top:10px;">Programme</p><select id="nus-programme"></select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><p class="label" style="margin-top:10px;">Batch</p><input type="text" id="nus-batch" placeholder="e.g. 2023-2027"></div>
+        <div><p class="label" style="margin-top:10px;">Residency</p><select id="nus-residency"><option value="DAY_SCHOLAR">Day Scholar</option><option value="HOSTELLER">Hosteller</option></select></div>
+      </div>
+    </div>
+    <div id="new-user-password-field"><p class="label" style="margin-top:10px;">Temporary password</p><input type="text" id="new-user-password" value="changeme123"></div>
     <div class="modal-actions">
       <button class="btn ghost small" id="user-cancel">Cancel</button>
       <button class="btn maroon small" id="user-confirm">Create user</button>
@@ -1699,24 +1710,64 @@
   document.getElementById("add-user-btn").addEventListener("click", function(){
     document.getElementById("new-user-name").value=""; document.getElementById("new-user-username").value="";
     document.getElementById("new-user-password").value="changeme123";
+    ["nus-student-id","nus-batch"].forEach(function(id){ document.getElementById(id).value=""; });
     document.getElementById("new-user-role").innerHTML = ROLES_CACHE.map(function(r){ return '<option value="'+r.role_code+'">'+r.label+'</option>'; }).join("");
     toggleSchoolField();
     document.getElementById("user-overlay").classList.add("open");
   });
+  function fillNusProgrammes(){
+    var schoolId = document.getElementById("nus-school").value;
+    var school = SCHOOLS_CACHE.filter(function(x){ return String(x.school_id) === String(schoolId); })[0];
+    var progs = (school && school.programmes) || [];
+    document.getElementById("nus-programme").innerHTML = progs.length
+      ? progs.map(function(pn){ return '<option value="'+escapeHtml(pn)+'">'+escapeHtml(pn)+'</option>'; }).join("")
+      : '<option value="">— no programmes set for this school —</option>';
+  }
+  document.getElementById("nus-school").addEventListener("change", fillNusProgrammes);
   function toggleSchoolField(){
-    var isSchoolAdmin = document.getElementById("new-user-role").value === "school_admin";
+    var role = document.getElementById("new-user-role").value;
+    var isSchoolAdmin = role === "school_admin", isStudent = role === "student";
     document.getElementById("new-user-school-field").style.display = isSchoolAdmin ? "block" : "none";
+    document.getElementById("new-user-student-fields").style.display = isStudent ? "block" : "none";
+    document.getElementById("new-user-password-field").style.display = isStudent ? "none" : "block";
+    document.getElementById("new-user-username-label").textContent = isStudent ? "University email" : "Username";
+    document.getElementById("new-user-username").placeholder = isStudent ? "student@anu.edu.in" : "";
     if(isSchoolAdmin){
       api("/api/schools").then(function(schools){
-        document.getElementById("new-user-school").innerHTML = schools.map(function(s){ return '<option value="'+s.school_id+'">'+escapeHtml(s.name)+'</option>'; }).join("");
+        document.getElementById("new-user-school").innerHTML = schools.map(function(sc){ return '<option value="'+sc.school_id+'">'+escapeHtml(sc.name)+'</option>'; }).join("");
+      });
+    }
+    if(isStudent){
+      api("/api/schools").then(function(schools){
+        SCHOOLS_CACHE = schools;
+        document.getElementById("nus-school").innerHTML = schools.map(function(sc){ return '<option value="'+sc.school_id+'">'+escapeHtml(sc.name)+'</option>'; }).join("");
+        fillNusProgrammes();
       });
     }
   }
   document.getElementById("new-user-role").addEventListener("change", toggleSchoolField);
   document.getElementById("user-cancel").addEventListener("click", function(){ document.getElementById("user-overlay").classList.remove("open"); });
   document.getElementById("user-confirm").addEventListener("click", function(){
-    var body = { name: document.getElementById("new-user-name").value.trim(), username: document.getElementById("new-user-username").value.trim(),
-      password: document.getElementById("new-user-password").value.trim() || "changeme123", roleCode: document.getElementById("new-user-role").value };
+    var role = document.getElementById("new-user-role").value;
+    var name = document.getElementById("new-user-name").value.trim(), username = document.getElementById("new-user-username").value.trim();
+    if(role === "student"){
+      var schoolId = document.getElementById("nus-school").value;
+      var school = SCHOOLS_CACHE.filter(function(x){ return String(x.school_id) === String(schoolId); })[0];
+      var stu = { email: username, name: name, studentSdmisId: document.getElementById("nus-student-id").value.trim(),
+        program: document.getElementById("nus-programme").value, schoolDept: school ? school.name : "",
+        batch: document.getElementById("nus-batch").value.trim(), residency: document.getElementById("nus-residency").value };
+      var missing = [];
+      if(!stu.name) missing.push("full name"); if(!stu.email) missing.push("university email"); if(!stu.studentSdmisId) missing.push("student ID");
+      if(!stu.program) missing.push("programme"); if(!stu.batch) missing.push("batch");
+      if(missing.length){ alert("Please fill in: " + missing.join(", ") + "."); return; }
+      api("/api/admin/students/bulk-import", {method:"POST", body: JSON.stringify({students:[stu]})}).then(function(res){
+        if(res.errors && res.errors.length){ alert(res.errors[0].reason); return; }
+        document.getElementById("user-overlay").classList.remove("open");
+        loadUsersScreen();
+      }).catch(function(e){ alert(e.message); });
+      return;
+    }
+    var body = { name: name, username: username, password: document.getElementById("new-user-password").value.trim() || "changeme123", roleCode: role };
     if(body.roleCode === "school_admin") body.schoolId = document.getElementById("new-user-school").value;
     if(!body.name || !body.username){ alert("Name and username are required."); return; }
     api("/api/users", {method:"POST", body: JSON.stringify(body)}).then(function(){
@@ -1786,6 +1837,7 @@
     var student = {
       email: document.getElementById("new-student-email").value.trim(),
       name: document.getElementById("new-student-name").value.trim(),
+      studentSdmisId: document.getElementById("new-student-id").value.trim(),
       program: document.getElementById("new-student-programme").value,
       schoolDept: school ? school.name : "",
       batch: document.getElementById("new-student-batch").value.trim(),
@@ -1796,6 +1848,7 @@
       renderImportResult(res, "new-student-result");
       document.getElementById("new-student-email").value = "";
       document.getElementById("new-student-name").value = "";
+      document.getElementById("new-student-id").value = "";
       document.getElementById("new-student-batch").value = "";
     }).catch(function(e){ alert(e.message); });
   });

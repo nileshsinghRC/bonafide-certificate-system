@@ -1297,6 +1297,9 @@ app.get("/api/users", requireAuth, requireRole("super_admin"), async (req, res) 
 app.post("/api/users", requireAuth, requireRole("super_admin"), async (req, res) => {
   const { username, password, name, roleCode, schoolId } = req.body || {};
   if (!username || !password || !name || !roleCode) return err(res, 400, "MISSING_FIELDS", "username, password, name, and roleCode are required.");
+  if (roleCode === "student") {
+    return err(res, 400, "USE_STUDENT_ROSTER", "Students need a programme, school, batch and student ID. Add them with the Student role in Add user, or through the student roster / bulk import.");
+  }
   try {
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
