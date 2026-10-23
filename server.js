@@ -90,15 +90,51 @@ function generateTempPassword() {
 // automatically tagged with the right school — this is the validation step
 // that makes a School Admin's queue actually scoped to their own school's
 // students rather than the whole university.
-async function matchSchoolForProgramme(client, programme) {
-  if (!programme) return null;
-  const { rows } = await client.query("SELECT school_id, programmes FROM schools WHERE is_active = true");
-  const needle = String(programme).trim().toLowerCase();
-  for (const s of rows) {
-    const list = (s.programmes || []).map((p) => String(p).trim().toLowerCase());
-    if (list.indexOf(needle) !== -1) return s.school_id;
+// ---------------- School ownership: school + programme ----------------
+// A School Office handles an application only if (a) the application is tagged to its school AND
+// (b) that school actually lists the student's programme. SQL form, for queues and lists:
+function schoolOwnsSql(alias, param) {
+  return "(" + alias + ".school_id = " + param + "::int AND " + alias + ".program IS NOT NULL AND EXISTS (" +
+    "SELECT 1 FROM schools sc, jsonb_array_elements_text(sc.programmes) p(name) " +
+    "WHERE sc.school_id = " + param + "::int AND lower(trim(p.name)) = lower(trim(" + alias + ".program))))";
+}
+async function schoolIdOfUser(userId) {
+  const r = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [userId]);
+  return r.rows[0] ? r.rows[0].school_id : null;
+}
+async function schoolOwnsApplication(schoolId, application) {
+  if (!schoolId || !application || !application.program) return false;
+  const r = await pool.query(
+    "SELECT 1 FROM schools sc, jsonb_array_elements_text(sc.programmes) p(name) WHERE sc.school_id = $1 AND $2::int = $1 AND lower(trim(p.name)) = lower(trim($3)) LIMIT 1",
+    [schoolId, application.school_id, application.program]
+  );
+  return r.rows.length > 0;
+}
+
+// Which school does a student belong to? The school the admin explicitly chose (by name) wins:
+// a programme can be listed under more than one school (e.g. Bachelor of Architecture), and picking
+// "the first school that lists it" silently sent students to a school nobody administers.
+// Only when no school was named do we fall back to matching by programme.
+// Returns { schoolId, error }. A student belongs to the school that offers their programme:
+//  - a named school must list the programme, otherwise it is an error (never silently route elsewhere);
+//  - no school named + exactly one school lists it -> that school;
+//  - no school named + several schools list it -> ambiguous, the admin must choose;
+//  - nobody lists it -> no school (flagged), so the programme can be fixed under Schools & programmes.
+async function matchSchoolForProgramme(client, programme, schoolName) {
+  const { rows } = await client.query("SELECT school_id, name, programmes FROM schools WHERE is_active = true ORDER BY school_id");
+  const norm = (v) => String(v || "").trim().toLowerCase();
+  const offers = (sc) => (sc.programmes || []).map(norm).indexOf(norm(programme)) !== -1;
+  if (norm(schoolName)) {
+    const named = rows.find((sc) => norm(sc.name) === norm(schoolName));
+    if (!named) return { schoolId: null, error: "School \"" + schoolName + "\" does not exist" };
+    if (programme && !offers(named)) return { schoolId: null, error: "\"" + programme + "\" is not a programme of " + named.name + ". Choose the school that offers it, or add the programme to that school under Schools & programmes" };
+    return { schoolId: named.school_id, error: null };
   }
-  return null;
+  if (!programme) return { schoolId: null, error: null };
+  const matches = rows.filter(offers);
+  if (matches.length === 1) return { schoolId: matches[0].school_id, error: null };
+  if (matches.length > 1) return { schoolId: null, error: "\"" + programme + "\" is offered by more than one school (" + matches.map((m) => m.name).join(", ") + "). Say which school the student belongs to" };
+  return { schoolId: null, error: null };
 }
 
 // ---------------- Student profile data (template blanks) ----------------
@@ -155,7 +191,9 @@ async function bulkUpsertStudents(client, students) {
     if (!isValidEmailFormat(email)) { errors.push({ email, reason: "Not a valid email address" }); continue; }
     if (!studentEmailAllowed(email)) { errors.push({ email, reason: "Email domain is not allowed for student accounts" }); continue; }
 
-    const schoolId = await matchSchoolForProgramme(client, raw.program);
+    const match = await matchSchoolForProgramme(client, raw.program, raw.schoolDept);
+    if (match.error) { errors.push({ email, reason: match.error }); continue; }
+    const schoolId = match.schoolId;
     const schoolWarning = raw.program && !schoolId ? " (no school matched this programme — assign manually in Users & Roles)" : "";
 
     const prof = extractProfile(raw);
@@ -348,9 +386,7 @@ async function renderIssuedCertificateHtml(db, row) {
 async function canTouchApplication(req, application) {
   if (req.auth.role === "student") return false;
   if (req.auth.role === "school_admin") {
-    const ur = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [req.auth.userId]);
-    const mine = ur.rows[0] && ur.rows[0].school_id;
-    if (mine && application.school_id && mine !== application.school_id) return false;
+    return schoolOwnsApplication(await schoolIdOfUser(req.auth.userId), application);
   }
   return true;
 }
@@ -529,6 +565,10 @@ app.post("/api/applications", requireAuth, requireRole("student", "super_admin")
     const userRes = await client.query("SELECT * FROM users WHERE user_id = $1", [req.auth.userId]);
     const student = userRes.rows[0];
     if (!student) return err(res, 401, "INVALID_SESSION", "Session no longer valid.");
+
+    if (!student.school_id || !(await schoolOwnsApplication(student.school_id, { school_id: student.school_id, program: student.program }))) {
+      return err(res, 409, "SCHOOL_PROGRAMME_MISMATCH", "Your record does not link your programme to a school that offers it, so no school office could review this request. Please contact the university administration to correct your school/programme.");
+    }
 
     const ctRes = await client.query("SELECT * FROM certificate_types WHERE code = $1 AND is_active = true", [certTypeCode]);
     const certType = ctRes.rows[0];
@@ -902,8 +942,9 @@ app.get("/api/department/queue", requireAuth, async (req, res) => {
   if (DEPARTMENT_ROLES.indexOf(req.auth.role) !== -1) {
     dept = Object.keys(STAGE_TO_ROLE).find((k) => STAGE_TO_ROLE[k] === req.auth.role);
     if (dept === "SCHOOL") {
-      const ur = await pool.query("SELECT school_id FROM users WHERE user_id = $1", [req.auth.userId]);
-      schoolFilter = ur.rows[0] ? ur.rows[0].school_id : null;
+      schoolFilter = await schoolIdOfUser(req.auth.userId);
+      // A School Office account that is not tagged to any school must see nothing - never everything.
+      if (!schoolFilter) return res.json({ dept, applications: [], warning: "This account is not assigned to a school. Ask the Super Admin to tag it under Users & roles." });
     }
   } else if (req.auth.role === "super_admin") {
     dept = req.query.dept;
@@ -917,7 +958,7 @@ app.get("/api/department/queue", requireAuth, async (req, res) => {
   let schoolClause = "";
   if (dept === "SCHOOL" && schoolFilter) {
     params.push(schoolFilter);
-    schoolClause = " AND a.school_id = $2";
+    schoolClause = " AND " + schoolOwnsSql("a", "$2");
   }
   const { rows } = await pool.query(
     `SELECT a.*, ct.code AS cert_type_code, ct.label AS cert_type_label
@@ -958,6 +999,9 @@ app.patch("/api/department/applications/:id/action", requireAuth, async (req, re
     const requiredRole = STAGE_TO_ROLE[currentDept];
     if (req.auth.role !== requiredRole && req.auth.role !== "super_admin") {
       return err(res, 403, "FORBIDDEN", "This application is not at your department's stage.");
+    }
+    if (req.auth.role === "school_admin" && !(await schoolOwnsApplication(await schoolIdOfUser(req.auth.userId), application))) {
+      return err(res, 403, "FORBIDDEN", "This application belongs to another school or programme.");
     }
 
     const actorLine = req.auth.name + " (" + req.auth.role + ")";
@@ -1018,6 +1062,9 @@ app.post("/api/department/applications/:id/resubmit-to-registrar", requireAuth, 
     const requiredRole = STAGE_TO_ROLE[currentDept];
     if (req.auth.role !== requiredRole && req.auth.role !== "super_admin") {
       return err(res, 403, "FORBIDDEN", "This application is not at your department's stage.");
+    }
+    if (req.auth.role === "school_admin" && !(await schoolOwnsApplication(await schoolIdOfUser(req.auth.userId), application))) {
+      return err(res, 403, "FORBIDDEN", "This application belongs to another school or programme.");
     }
 
     await client.query(
@@ -1594,10 +1641,11 @@ app.put("/api/settings/:key", requireAuth, requireRole("super_admin"), async (re
 // ============================================================
 // CONSOLIDATED APPLICATION RECORDS — School (own school) & Registrar (all)
 // ============================================================
-async function fetchConsolidatedApplications(schoolId) {
+async function fetchConsolidatedApplications(schoolId, strict) {
   const params = [];
   let clause = "";
-  if (schoolId) { params.push(schoolId); clause = "WHERE a.school_id = $1"; }
+  if (strict && !schoolId) return [];   // a School Office with no school sees nothing
+  if (schoolId) { params.push(schoolId); clause = "WHERE " + (strict ? schoolOwnsSql("a", "$1") : "a.school_id = $1"); }
   const { rows } = await pool.query(
     `SELECT a.application_id, a.application_code, a.student_name, a.student_sdmis_id, a.program, a.school_dept, a.status,
             a.current_stage_index, a.stages, a.created_at, a.updated_at,
@@ -1623,7 +1671,7 @@ app.get("/api/department/applications/all", requireAuth, async (req, res) => {
   } else if (req.query.schoolId) {
     schoolId = req.query.schoolId;
   }
-  res.json(await fetchConsolidatedApplications(schoolId));
+  res.json(await fetchConsolidatedApplications(schoolId, req.auth.role === "school_admin"));
 });
 
 app.get("/api/registrar/applications/all", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
@@ -1661,7 +1709,7 @@ app.get("/api/department/applications/export.xlsx", requireAuth, async (req, res
   } else if (req.query.schoolId) {
     schoolId = req.query.schoolId;
   }
-  const rows = await fetchConsolidatedApplications(schoolId);
+  const rows = await fetchConsolidatedApplications(schoolId, req.auth.role === "school_admin");
   const buf = rowsToWorkbookBuffer(rows);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", "attachment; filename=applications.xlsx");
