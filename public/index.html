@@ -1216,6 +1216,14 @@
     });
   });
 
+  // "Fee table ×30; Mr./Ms.; Current semester" - group repeated blanks so the count means "things to fill in"
+  function groupBlanks(labels){
+    var order = [], counts = {};
+    labels.forEach(function(l){ if(!counts[l]){ counts[l] = 0; order.push(l); } counts[l]++; });
+    return { kinds: order.length, total: labels.length,
+      text: order.map(function(l){ return counts[l] > 1 ? l + " (" + counts[l] + " cells)" : l; }).join("; ") };
+  }
+
   // ---------------- A4 PAGE + CONFIDENTIAL LETTERHEAD ----------------
   // One stylesheet drives both the editor (inside the TinyMCE iframe, scope "body") and the
   // finished page (scope ".lh-content"), so what is edited is what is printed.
@@ -1309,7 +1317,7 @@
     var el = document.getElementById("editor-unresolved");
     if(!ED.editable){ el.className=""; el.textContent = "This certificate can no longer be edited."; return; }
     var u = edUnresolvedNow();
-    if(u.length){ el.className = "bad"; el.textContent = u.length + " highlighted field" + (u.length>1?"s":"") + " still to fill: " + u.filter(function(x,i){return u.indexOf(x)===i;}).join("; "); }
+    if(u.length){ var g = groupBlanks(u); el.className = "bad"; el.textContent = g.kinds + " item" + (g.kinds>1?"s":"") + " still to fill (highlighted in yellow): " + g.text; }
     else { el.className = "good"; el.textContent = "All fields filled."; }
   }
 
@@ -1513,9 +1521,9 @@
     document.getElementById("issue-summary").textContent = "";
     document.getElementById("issue-overlay").classList.add("open");
     api("/api/applications/"+appId+"/certificate-editor").then(function(res){
-      var n = res.unresolved.length;
+      var g = groupBlanks(res.unresolved.map(function(x){ return x.label; }));
       document.getElementById("issue-summary").textContent = res.applicationCode + " · " + res.studentName + " — " +
-        (n ? n + " highlighted field" + (n>1?"s":"") + " must be filled in the editor before this can be issued." : "all fields filled.");
+        (g.total ? g.kinds + " item" + (g.kinds>1?"s":"") + " must be filled before this can be issued: " + g.text + "." : "all fields filled.");
     }).catch(function(){});
   }
   document.getElementById("issue-open-editor").addEventListener("click", function(){
@@ -1524,9 +1532,9 @@
   });
   openIssueModal.refreshSummary = function(){
     api("/api/applications/"+ISSUE_APP_ID+"/certificate-editor").then(function(res){
-      var n = res.unresolved.length;
+      var g = groupBlanks(res.unresolved.map(function(x){ return x.label; }));
       document.getElementById("issue-summary").textContent = res.applicationCode + " · " + res.studentName + " — " +
-        (n ? n + " highlighted field" + (n>1?"s":"") + " must be filled in the editor before this can be issued." : "all fields filled.");
+        (g.total ? g.kinds + " item" + (g.kinds>1?"s":"") + " must be filled before this can be issued: " + g.text + "." : "all fields filled.");
     }).catch(function(){});
   };
   document.getElementById("issue-cancel").addEventListener("click", function(){ document.getElementById("issue-overlay").classList.remove("open"); });

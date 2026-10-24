@@ -1191,7 +1191,11 @@ app.post("/api/registrar/applications/:id/upload-signature", requireAuth, requir
       await client.query("ROLLBACK");
       return res.status(422).json({ error: {
         code: "UNRESOLVED_FIELDS",
-        message: "Fill these highlighted fields in the certificate editor before issuing: " + unresolved.map((u) => u.label).join("; ") + ".",
+        message: "Fill these highlighted fields in the certificate editor before issuing: " + (() => {
+          const c = {}; const order = [];
+          unresolved.forEach((u) => { if (!c[u.label]) { c[u.label] = 0; order.push(u.label); } c[u.label]++; });
+          return order.map((l) => (c[l] > 1 ? l + " (" + c[l] + " cells)" : l)).join("; ");
+        })() + ".",
         fields: unresolved
       } });
     }
