@@ -1216,6 +1216,35 @@
     });
   });
 
+  // Batch dropdown shared by every form: options come from the server (start year + programme length),
+  // so a student's batch and a fee structure's batch are always spelled the same way. The original text
+  // input stays the value holder (hidden unless "Other" is chosen), so existing submit code is unchanged.
+  function attachBatchPicker(inputId, programmeSelectId, opts){
+    opts = opts || {};
+    var input = document.getElementById(inputId), sel = document.createElement("select");
+    sel.id = inputId + "-sel"; if(opts.style) sel.setAttribute("style", opts.style);
+    input.parentNode.insertBefore(sel, input); input.style.display = "none";
+    var req = 0;
+    function refill(){
+      var v = document.getElementById(programmeSelectId).value, mine = ++req;
+      input.value = ""; input.style.display = "none";
+      if(!v){ sel.innerHTML = '<option value="">Choose the programme first</option>'; return Promise.resolve(); }
+      return api("/api/batches?" + (opts.byId ? "programmeId=" + encodeURIComponent(v) : "programme=" + encodeURIComponent(v))).then(function(r){
+        if(mine !== req) return;
+        sel.innerHTML = '<option value="">' + (opts.allowAll ? "All batches" : "Choose batch…") + '</option>' +
+          r.batches.map(function(b){ return '<option value="' + b + '">' + b + '</option>'; }).join("") +
+          '<option value="__other">' + (r.durationYears ? "Other (type it)…" : "Programme length not set — type it…") + '</option>';
+      }).catch(function(){ sel.innerHTML = '<option value="__other">Type the batch…</option>'; });
+    }
+    sel.addEventListener("change", function(){
+      if(sel.value === "__other"){ input.style.display = "block"; input.value = ""; input.focus(); }
+      else { input.style.display = "none"; input.value = sel.value; }
+      if(opts.onChange) opts.onChange();
+    });
+    sel.refill = refill;
+    return sel;
+  }
+
   // "Fee table ×30; Mr./Ms.; Current semester" - group repeated blanks so the count means "things to fill in"
   function groupBlanks(labels){
     var order = [], counts = {};
@@ -1664,8 +1693,9 @@
     var mine = ++FS_REQ;   // ignore a slower, older response if the programme was changed again meanwhile
     api("/api/fee-structures?programmeId="+pid+"&batch="+encodeURIComponent(document.getElementById("fs-batch").value.trim())).then(function(r){ if(mine === FS_REQ) fsFill(r.rows); }).catch(function(e){ alert(e.message); });
   }
+  var fsBatchSel = attachBatchPicker("fs-batch", "fs-programme", {byId: true, allowAll: true, onChange: function(){ fsLoad(); }, style: "width:auto;margin:0;"});
   document.getElementById("fs-load").addEventListener("click", fsLoad);
-  document.getElementById("fs-programme").addEventListener("change", fsLoad);
+  document.getElementById("fs-programme").addEventListener("change", function(){ fsBatchSel.refill().then(fsLoad); });
   document.getElementById("fs-save").addEventListener("click", function(){
     var pid = document.getElementById("fs-programme").value; if(!pid){ alert("Choose a programme."); return; }
     var rows = [];
@@ -1723,6 +1753,7 @@
     toggleSchoolField();
     document.getElementById("user-overlay").classList.add("open");
   });
+  var nusBatchSel;
   function fillNusProgrammes(){
     var schoolId = document.getElementById("nus-school").value;
     var school = SCHOOLS_CACHE.filter(function(x){ return String(x.school_id) === String(schoolId); })[0];
@@ -1730,7 +1761,10 @@
     document.getElementById("nus-programme").innerHTML = progs.length
       ? progs.map(function(pn){ return '<option value="'+escapeHtml(pn)+'">'+escapeHtml(pn)+'</option>'; }).join("")
       : '<option value="">— no programmes set for this school —</option>';
+    if(!nusBatchSel) nusBatchSel = attachBatchPicker("nus-batch", "nus-programme");
+    nusBatchSel.refill();
   }
+  document.getElementById("nus-programme").addEventListener("change", function(){ if(nusBatchSel) nusBatchSel.refill(); });
   document.getElementById("nus-school").addEventListener("change", fillNusProgrammes);
   function toggleSchoolField(){
     var role = document.getElementById("new-user-role").value;
@@ -1830,6 +1864,7 @@
     sel.innerHTML = SCHOOLS_CACHE.map(function(s){ return '<option value="'+s.school_id+'">'+escapeHtml(s.name)+'</option>'; }).join("");
     populateNewStudentProgrammePicker();
   }
+  var nsBatchSel;
   function populateNewStudentProgrammePicker(){
     var schoolId = document.getElementById("new-student-school").value;
     var school = SCHOOLS_CACHE.filter(function(s){ return String(s.school_id) === String(schoolId); })[0];
@@ -1837,7 +1872,10 @@
     document.getElementById("new-student-programme").innerHTML = progs.length
       ? progs.map(function(p){ return '<option value="'+escapeHtml(p)+'">'+escapeHtml(p)+'</option>'; }).join("")
       : '<option value="">— no programmes set for this school —</option>';
+    if(!nsBatchSel) nsBatchSel = attachBatchPicker("new-student-batch", "new-student-programme");
+    nsBatchSel.refill();
   }
+  document.getElementById("new-student-programme").addEventListener("change", function(){ if(nsBatchSel) nsBatchSel.refill(); });
   document.getElementById("new-student-school").addEventListener("change", populateNewStudentProgrammePicker);
   document.getElementById("new-student-add").addEventListener("click", function(){
     var schoolId = document.getElementById("new-student-school").value;
@@ -1857,7 +1895,7 @@
       document.getElementById("new-student-email").value = "";
       document.getElementById("new-student-name").value = "";
       document.getElementById("new-student-id").value = "";
-      document.getElementById("new-student-batch").value = "";
+      document.getElementById("new-student-batch").value = ""; if(nsBatchSel) nsBatchSel.refill();
     }).catch(function(e){ alert(e.message); });
   });
 

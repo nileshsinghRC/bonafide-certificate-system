@@ -11,7 +11,7 @@ const XLSX = require("xlsx");
 const { pool } = require("./src/db");
 const { signToken, requireAuth, requireRole } = require("./src/auth");
 const { renderCertificateHtml, fieldsUsedBy, RENDERER_CODES } = require("./src/certificateTemplates");
-const { resolveAll, BY_KEY, PROFILE_KEYS, normGender, normaliseAdept } = require("./src/certificateFields");
+const { resolveAll, BY_KEY, PROFILE_KEYS, normGender, normaliseAdept, canonicalBatch, parseBatch } = require("./src/certificateFields");
 const { sanitizeCertificateHtml, findUnresolvedBlanks, finalizeHtml } = require("./src/certificateHtml");
 
 // ---------------- Page model + CONFIDENTIAL letterhead ----------------
@@ -191,6 +191,14 @@ async function bulkUpsertStudents(client, students) {
     if (!isValidEmailFormat(email)) { errors.push({ email, reason: "Not a valid email address" }); continue; }
     if (!studentEmailAllowed(email)) { errors.push({ email, reason: "Email domain is not allowed for student accounts" }); continue; }
 
+    // One spelling of the batch everywhere: start year + programme length (e.g. 2024-2029 for a 5-year programme).
+    let batchValue = raw.batch ? String(raw.batch).trim() : null;
+    if (batchValue) {
+      const pd = raw.program ? await client.query("SELECT duration_years FROM programmes WHERE lower(name) = lower($1)", [raw.program]) : { rows: [] };
+      batchValue = canonicalBatch(pd.rows[0] && pd.rows[0].duration_years, batchValue);
+      const pb = parseBatch(batchValue);
+      if (!pb || pb.start < 1990 || pb.start > 2100) { errors.push({ email, reason: "Batch must look like 2024-2029 (the year the programme started and ended)" }); continue; }
+    }
     const match = await matchSchoolForProgramme(client, raw.program, raw.schoolDept);
     if (match.error) { errors.push({ email, reason: match.error }); continue; }
     const schoolId = match.schoolId;
@@ -204,7 +212,7 @@ async function bulkUpsertStudents(client, students) {
         `UPDATE users SET name = $1, student_sdmis_id = $2, program = $3, school_dept = $4, residency = $5, school_id = $6, batch = $7,
                 profile_data = COALESCE(profile_data, '{}'::jsonb) || $9::jsonb
          WHERE user_id = $8`,
-        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null, existing.rows[0].user_id, JSON.stringify(prof.profile)]
+        [name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, batchValue, existing.rows[0].user_id, JSON.stringify(prof.profile)]
       );
       updated.push(email + schoolWarning + profWarning);
     } else {
@@ -214,7 +222,7 @@ async function bulkUpsertStudents(client, students) {
       await client.query(
         `INSERT INTO users (username, password_hash, name, role_code, student_sdmis_id, program, school_dept, residency, school_id, batch, must_change_password, profile_data)
          VALUES ($1,$2,$3,'student',$4,$5,$6,$7,$8,$9,false,$10::jsonb)`,
-        [email, placeholderHash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, raw.batch || null, JSON.stringify(prof.profile)]
+        [email, placeholderHash, name, raw.studentSdmisId || null, raw.program || null, raw.schoolDept || null, raw.residency || null, schoolId, batchValue, JSON.stringify(prof.profile)]
       );
       created.push({ email, note: "Can sign in with a one-time code sent to this email" + schoolWarning + profWarning, school: schoolId });
     }
@@ -1565,12 +1573,27 @@ app.get("/api/settings", requireAuth, async (req, res) => {
   res.json(out);
 });
 
+// The batch list every batch dropdown uses, so students and fee structures can never disagree.
+// Batch = start year + programme length, e.g. 2024-2029 for a 5-year programme.
+app.get("/api/batches", requireAuth, requireRole("super_admin"), async (req, res) => {
+  let r;
+  if (req.query.programmeId) r = await pool.query("SELECT name, duration_years FROM programmes WHERE programme_id = $1", [Number(req.query.programmeId)]);
+  else r = await pool.query("SELECT name, duration_years FROM programmes WHERE lower(name) = lower($1)", [String(req.query.programme || "")]);
+  const prog = r.rows[0];
+  if (!prog) return err(res, 404, "PROGRAMME_NOT_FOUND", "No such programme.");
+  const d = prog.duration_years ? Number(prog.duration_years) : null;
+  const batches = [];
+  if (d) for (let y = new Date().getFullYear() + 1; y >= new Date().getFullYear() - 9; y--) batches.push(y + "-" + (y + d));
+  res.json({ programme: prog.name, durationYears: d, batches });
+});
+
 // ---------------- Fee structure (feeds the fee tables on the Bank Loan certificates) ----------------
 // One set of rows per programme; batch NULL applies to every batch, a batch-specific set wins.
 app.get("/api/fee-structures", requireAuth, requireRole("super_admin"), async (req, res) => {
   const pid = Number(req.query.programmeId);
   if (!Number.isInteger(pid)) return err(res, 400, "MISSING_PROGRAMME", "Pass ?programmeId=.");
-  const batch = (req.query.batch || "").trim() || null;
+  const pdur = await pool.query("SELECT duration_years FROM programmes WHERE programme_id = $1", [pid]);
+  const batch = canonicalBatch(pdur.rows[0] && pdur.rows[0].duration_years, req.query.batch);
   const { rows } = await pool.query(
     "SELECT year_no, tuition_semester, tuition_year, residence_semester, residence_year FROM fee_structures WHERE programme_id = $1 AND COALESCE(batch,'') = COALESCE($2,'') ORDER BY year_no",
     [pid, batch]
@@ -1583,7 +1606,8 @@ app.put("/api/fee-structures", requireAuth, requireRole("super_admin"), async (r
   const { programmeId, batch, rows } = req.body || {};
   const pid = Number(programmeId);
   if (!Number.isInteger(pid) || !Array.isArray(rows)) return err(res, 400, "BAD_REQUEST", "programmeId and rows[] are required.");
-  const b = (batch || "").toString().trim() || null;
+  const pdur = await pool.query("SELECT duration_years FROM programmes WHERE programme_id = $1", [pid]);
+  const b = canonicalBatch(pdur.rows[0] && pdur.rows[0].duration_years, batch);
   if (b && b.length > 20) return err(res, 422, "BAD_BATCH", "Batch is too long (e.g. 2023-2027).");
   const num = (v) => {
     if (v === null || v === undefined || String(v).trim() === "") return null;

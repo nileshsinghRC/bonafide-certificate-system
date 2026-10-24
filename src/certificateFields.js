@@ -42,6 +42,17 @@ function parseBatch(batch) {
   return { start, end };
 }
 
+// One canonical spelling for a batch: "<start year>-<start year + programme length>", e.g. 2024-2029 for a
+// 5-year programme. "2024-25", "2024-2025" and "2024" all become "2024-2029". Without a known programme
+// length the text is returned as typed (trimmed).
+function canonicalBatch(durationYears, text) {
+  const t = String(text == null ? "" : text).trim();
+  if (!t) return null;
+  const m = t.match(/^(\d{4})(?:\s*[-\u2013/]\s*\d{2,4})?$/);
+  const d = Number(durationYears);
+  if (m && Number.isInteger(d) && d >= 1) return m[1] + "-" + (Number(m[1]) + d);
+  return t;
+}
 function normGender(g) {
   const s = String(g || "").trim().toLowerCase();
   if (s === "m" || s === "male" || s === "man") return "M";
@@ -89,7 +100,7 @@ const FIELDS = [
 
   // ---- programme + batch ----
   { key: "batch", label: "Batch", placeholder: "(Batch)", kind: "student", source: "users.batch",
-    resolve: (c) => clean(c.application.batch) || clean(c.student.batch) },
+    resolve: (c) => canonicalBatch(c.programme && c.programme.duration_years, clean(c.application.batch) || clean(c.student.batch)) },
   { key: "programme_years", label: "Programme length (years)", placeholder: "(4/5)", kind: "programme", source: "programmes.duration_years",
     resolve: (c) => (c.programme && c.programme.duration_years ? String(c.programme.duration_years) : null) },
   { key: "programme_years_word", label: "Programme length (four/five)", placeholder: "(four/five)", kind: "programme", source: "programmes.duration_years",
@@ -211,13 +222,25 @@ function normaliseAdept(a) {
 function money(n) { return n === null || n === undefined || n === "" || isNaN(Number(n)) ? null : Number(n); }
 function buildFeeTable(feeRows, c) {
   const batch = clean(c.application.batch) || clean(c.student.batch);
+  const sb = parseBatch(batch);                       // "2024-2025" -> start 2024
+  const duration0 = c.programme && c.programme.duration_years ? Number(c.programme.duration_years) : null;
+  // A fee set applies to a student when the batch STARTS in the same year, whatever way the batch was typed
+  // ("2024-2029", "2024-25" and "2024-2025" are the same intake). Preference per year:
+  //   exact text match > same start year (end year agreeing with the programme length preferred) > fees for all batches.
+  const score = (r) => {
+    if (!r.batch) return 1;
+    if (batch && r.batch === batch) return 4;
+    const rb = parseBatch(r.batch);
+    if (sb && rb && rb.start === sb.start) return duration0 && rb.end === rb.start + duration0 ? 3 : 2;
+    return 0;
+  };
   const years = {};
   feeRows.forEach((r) => {
-    const exact = r.batch && batch && r.batch === batch;
-    if (!r.batch || exact) {
-      const cur = years[r.year_no];
-      if (!cur || (exact && !cur._exact)) years[r.year_no] = Object.assign({}, r, { _exact: !!exact });
-    }
+    const sc = score(r);
+    if (!sc) return;
+    const cur = years[r.year_no];
+    const newer = cur && r.updated_at && cur.updated_at && new Date(r.updated_at) > new Date(cur.updated_at);
+    if (!cur || sc > cur._score || (sc === cur._score && newer)) years[r.year_no] = Object.assign({}, r, { _score: sc });
   });
   const duration = c.programme && c.programme.duration_years ? Number(c.programme.duration_years) : null;
   const maxData = Math.max(0, ...Object.keys(years).map(Number));
@@ -267,4 +290,4 @@ function resolveAll(input) {
   return values;
 }
 
-module.exports = { FIELDS, BY_KEY, ADEPT_FIELD, PROFILE_KEYS, resolveAll, ordinal, parseBatch, normGender, normaliseAdept };
+module.exports = { canonicalBatch, FIELDS, BY_KEY, ADEPT_FIELD, PROFILE_KEYS, resolveAll, ordinal, parseBatch, normGender, normaliseAdept };
