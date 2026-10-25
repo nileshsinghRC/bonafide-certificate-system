@@ -166,6 +166,16 @@
     .print-target.lh-page{ width: 210mm; height: 297mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .cert-wrap{ border: none; }
     .no-print{ display: none !important; }
+    /* Print exactly ONE page: while printing, JS marks the certificate (.pk) and its ancestors; everything else
+       is removed from the layout. (Hidden-but-present content used to add extra pages, and a fixed-position
+       overlay is repeated on every page - that is what produced two identical pages.) */
+    body.print-one :not(.pk):not(.pt *):not(html):not(body):not(head):not(head *){ display: none !important; }
+    body.print-one .pk{ display: block !important; visibility: visible !important; position: static !important; overflow: visible !important;
+      max-height: none !important; height: auto !important; width: auto !important; max-width: none !important; background: none !important;
+      border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; transform: none !important; }
+    body.print-one .lh-page.pk{ position: relative !important; width: 210mm !important; height: 296mm !important; overflow: hidden !important;
+      background: #fff !important; page-break-after: avoid; break-after: avoid; }
+    body.print-one .lh-page.pk *{ visibility: visible !important; }
   }
 </style>
 </head>
@@ -433,7 +443,6 @@
           <div><p class="label">ABC / NAD / APAAR ID</p><input type="text" id="cd-abc_id"></div>
           <div><p class="label">Foundation batch (joining year)</p><input type="text" id="cd-foundation_batch" placeholder="2023-24"></div>
           <div><p class="label">Hostel since (Month/Year)</p><input type="text" id="cd-hostel_since"></div>
-          <div><p class="label">Financial aid % on tuition</p><input type="text" id="cd-financial_aid_percent" placeholder="25"></div>
         </div>
         <p class="label" style="margin-top:8px;">Current address</p><textarea id="cd-address" style="min-height:54px;"></textarea>
         <p class="label" style="margin-top:8px;">ADEPT score table (Bank Loan – ADEPT certificate; the template has two score rows)</p>
@@ -573,21 +582,14 @@
     <button class="btn small" id="issue-open-editor">Open certificate editor</button>
     <p class="section-sub" style="margin:6px 0 0;">Check and edit the wording first — the certificate is issued exactly as it appears in the editor.</p>
 
-    <p class="label" style="margin-top:14px;">Upload Registrar's signature (PNG/JPEG)</p>
+    <p class="section-sub" style="margin:10px 0 0;">The signature and seal are placed above the Registrar's name automatically.</p>
+    <p class="label" style="margin-top:10px;">Upload Registrar's signature (PNG/JPEG)</p>
     <input type="file" id="issue-signature-file" accept="image/png,image/jpeg">
     <div id="issue-signature-preview" style="margin-top:8px;"></div>
-    <div style="display:flex;gap:8px;margin-top:6px;">
-      <div style="flex:1;"><p class="label">Position — top %</p><input type="text" id="issue-sig-top" value="78"></div>
-      <div style="flex:1;"><p class="label">Position — left %</p><input type="text" id="issue-sig-left" value="8"></div>
-    </div>
 
     <p class="label" style="margin-top:14px;">Upload official seal (optional, PNG/JPEG)</p>
     <input type="file" id="issue-seal-file" accept="image/png,image/jpeg">
     <div id="issue-seal-preview" style="margin-top:8px;"></div>
-    <div style="display:flex;gap:8px;margin-top:6px;">
-      <div style="flex:1;"><p class="label">Position — top %</p><input type="text" id="issue-seal-top" value="70"></div>
-      <div style="flex:1;"><p class="label">Position — left %</p><input type="text" id="issue-seal-left" value="60"></div>
-    </div>
 
     <div class="modal-actions">
       <button class="btn ghost small" id="issue-cancel">Close</button>
@@ -609,6 +611,12 @@
         <button class="btn ghost small" id="mg-apply">Apply</button> <button class="btn ghost small" id="mg-default">Default</button>
       </span>
       <span id="mg-note" style="color:var(--slate);"></span>
+    </div>
+    <div class="editor-margins" id="sch-bar" style="display:none;">
+      <strong>Scholarship / financial aid %</strong>
+      <input type="text" id="sch-percent" placeholder="e.g. 25">
+      <button class="btn small" id="sch-apply">Apply &amp; recalculate fees</button>
+      <span id="sch-note" style="color:var(--slate);">Enter 0 if the student has no scholarship, then delete the scholarship statement in the text.</span>
     </div>
     <div class="editor-area">
       <div id="editor-ruler"></div>
@@ -1245,6 +1253,29 @@
     return sel;
   }
 
+  // ---------------- print exactly the one visible certificate ----------------
+  (function(){
+    function visibleTargets(){
+      return [].slice.call(document.querySelectorAll(".print-target")).filter(function(e){ var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    }
+    function rank(t){
+      var ov = t.closest(".overlay.open"); if(!ov) return 0;
+      return 1 + (parseInt(getComputedStyle(ov).zIndex, 10) || 0);
+    }
+    window.addEventListener("beforeprint", function(){
+      var list = visibleTargets(); if(!list.length) return;
+      var best = list[0], bestRank = rank(best);
+      list.forEach(function(t){ var r = rank(t); if(r >= bestRank){ best = t; bestRank = r; } });
+      best.classList.add("pt");   // the certificate itself; its ancestors (.pk) are kept only as containers
+      for(var el = best; el && el !== document.body; el = el.parentElement) el.classList.add("pk");
+      document.body.classList.add("print-one");
+    });
+    window.addEventListener("afterprint", function(){
+      document.body.classList.remove("print-one");
+      [].slice.call(document.querySelectorAll(".pk,.pt")).forEach(function(e){ e.classList.remove("pk"); e.classList.remove("pt"); });
+    });
+  })();
+
   // "Fee table ×30; Mr./Ms.; Current semester" - group repeated blanks so the count means "things to fill in"
   function groupBlanks(labels){
     var order = [], counts = {};
@@ -1280,7 +1311,7 @@
   }
 
   // ---------------- RICH-TEXT CERTIFICATE EDITOR (any non-student login) ----------------
-  var ED = { appId: null, basedOn: null, editable: true, onClose: null, canSetMargins: false, margins: DEFAULT_MARGINS, sig: null, seal: null };
+  var ED = { appId: null, basedOn: null, saved: false, editable: true, onClose: null, canSetMargins: false, margins: DEFAULT_MARGINS, sig: null, seal: null };
   var TINY = null, TINY_LOADING = null;
   var PX_PER_MM = 96/25.4;
 
@@ -1389,6 +1420,9 @@
         " · reference no., date, QR code, signature and seal are added when it is issued";
       TINY.setContent(res.html); TINY.undoManager.clear(); TINY.setDirty(false);
       TINY.mode.set(res.editable ? "design" : "readonly");
+      ED.saved = !!res.saved;
+      document.getElementById("sch-bar").style.display = res.canSetScholarship ? "flex" : "none";
+      document.getElementById("sch-percent").value = res.scholarshipPercent === null || res.scholarshipPercent === undefined ? "" : res.scholarshipPercent;
       document.getElementById("mg-fields").style.display = res.canSetMargins ? "inline" : "none";
       document.getElementById("mg-note").textContent = res.canSetMargins
         ? "The Registrar's office sets the final margins; they are used for the letterhead page and the issued document."
@@ -1410,7 +1444,7 @@
     if(ED.canSetMargins) body.margins = ED.margins;
     return api("/api/applications/"+ED.appId+"/certificate-html", {method:"PUT", body: JSON.stringify(body)})
       .then(function(res){
-        ED.basedOn = res.updatedAt; TINY.setDirty(false);
+        ED.basedOn = res.updatedAt; TINY.setDirty(false); ED.saved = true;
         var c = document.getElementById("editor-save-confirm"); c.style.display = "inline"; setTimeout(function(){ c.style.display = "none"; }, 2500);
         return true;
       }).catch(function(e){
@@ -1426,7 +1460,16 @@
   document.getElementById("editor-reset").addEventListener("click", function(){
     if(!confirm("Discard all manual edits to this certificate and regenerate it from the template and the student's records?")) return;
     api("/api/applications/"+ED.appId+"/certificate-html/reset", {method:"POST"}).then(function(res){
-      TINY.setContent(res.html); TINY.undoManager.clear(); TINY.setDirty(false); ED.basedOn = res.updatedAt; edRefreshStatus();
+      TINY.setContent(res.html); TINY.undoManager.clear(); TINY.setDirty(false); ED.basedOn = res.updatedAt; ED.saved = false; edRefreshStatus();
+    }).catch(function(e){ alert(e.message); });
+  });
+  document.getElementById("sch-apply").addEventListener("click", function(){
+    var v = document.getElementById("sch-percent").value.trim().replace("%","");
+    if(v === "" || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 100){ alert("Enter a percentage between 0 and 100 (0 if there is no scholarship)."); return; }
+    if((ED.saved || (TINY && TINY.isDirty())) && !confirm("Applying the percentage regenerates the certificate text with the recalculated fee table. Manual edits made earlier to this certificate's text will be replaced. Continue?")) return;
+    api("/api/applications/"+ED.appId+"/scholarship", {method:"PUT", body: JSON.stringify({percent: v})}).then(function(res){
+      TINY.setContent(res.html); TINY.undoManager.clear(); TINY.setDirty(false); ED.basedOn = res.updatedAt; ED.saved = false; edRefreshStatus();
+      document.getElementById("sch-note").textContent = "Applied " + res.percent + "% — the fee table was recalculated." + (res.percent === 0 ? " No scholarship: delete the scholarship statement in the text." : "");
     }).catch(function(e){ alert(e.message); });
   });
   document.getElementById("mg-apply").addEventListener("click", function(){
@@ -1591,9 +1634,7 @@
     if(!ISSUE_SIGNATURE_B64){ alert("Upload a signature image first."); return; }
     var body = {
       signatureImageBase64: ISSUE_SIGNATURE_B64,
-      sealImageBase64: ISSUE_SEAL_B64,
-      signaturePosition: { top: Number(document.getElementById("issue-sig-top").value)||78, left: Number(document.getElementById("issue-sig-left").value)||8 },
-      sealPosition: { top: Number(document.getElementById("issue-seal-top").value)||70, left: Number(document.getElementById("issue-seal-left").value)||60 }
+      sealImageBase64: ISSUE_SEAL_B64
     };
     api("/api/registrar/applications/"+ISSUE_APP_ID+"/upload-signature", {method:"POST", body: JSON.stringify(body)})
       .then(function(res){
@@ -1624,7 +1665,7 @@
     loadCertificateDataPanel();
   }
   // ---------------- CERTIFICATE DATA PANEL (Super Admin) ----------------
-  var CD_PROFILE_KEYS = ["gender","current_semester","completed_semester","admission_month_year","admission_academic_year","admission_route","completion_month_year","completion_year","cgpa","cgpa_scale","abc_id","foundation_batch","hostel_since","financial_aid_percent","address"];
+  var CD_PROFILE_KEYS = ["gender","current_semester","completed_semester","admission_month_year","admission_academic_year","admission_route","completion_month_year","completion_year","cgpa","cgpa_scale","abc_id","foundation_batch","hostel_since","address"];
   var CS_KEYS = ["bank_account_number","bank_ifsc","bank_name","bank_branch","bank_branch_code","cgpa_scale","mysy_notify_email","registry_email"];
   function flash(id){ var c = document.getElementById(id); c.style.display = "inline"; setTimeout(function(){ c.style.display = "none"; }, 2500); }
   function loadCertificateDataPanel(){

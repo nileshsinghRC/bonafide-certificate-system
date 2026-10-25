@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS applications (
     certificate_html_updated_by      UUID REFERENCES users(user_id),
     certificate_html_updated_at      TIMESTAMPTZ,
     page_margins                       JSONB,        -- {top,right,bottom,left} in mm; NULL = default (see server.js DEFAULT_MARGINS_MM)
+    scholarship_percent                NUMERIC(5,2), -- entered by the Financial Aid department; drives the after-scholarship fee columns
     -- Per-request facts the student supplies (VISA: country, eventName, dateFrom, dateTo, sponsorship)
     request_details                   JSONB NOT NULL DEFAULT '{}'::jsonb,
 

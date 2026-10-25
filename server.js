@@ -789,7 +789,8 @@ app.get("/api/applications/:id/certificate-editor", requireAuth, async (req, res
     if (!application) return;
     const saved = !!application.certificate_html;
     const html = sanitizeCertificateHtml(saved ? application.certificate_html : await renderDraftCertificateHtml(client, application));
-    const label = (await client.query("SELECT label FROM certificate_types WHERE cert_type_id = $1", [application.cert_type_id])).rows[0];
+    const ctRow = (await client.query("SELECT label, code FROM certificate_types WHERE cert_type_id = $1", [application.cert_type_id])).rows[0];
+    const label = ctRow; const certTypeCode = ctRow && ctRow.code;
     res.json({
       applicationId: application.application_id,
       applicationCode: application.application_code,
@@ -799,6 +800,9 @@ app.get("/api/applications/:id/certificate-editor", requireAuth, async (req, res
       margins: marginsFor(application),
       defaultMargins: DEFAULT_MARGINS_MM,
       canSetMargins: req.auth.role === "registrar_admin",
+      usesScholarship: certTypeCode === "BANK_LOAN_FIN_AID",
+      canSetScholarship: certTypeCode === "BANK_LOAN_FIN_AID" && (req.auth.role === "finaid_admin" || req.auth.role === "super_admin"),
+      scholarshipPercent: application.scholarship_percent === null || application.scholarship_percent === undefined ? null : Number(application.scholarship_percent),
       html,
       saved,
       updatedAt: application.certificate_html_updated_at,
@@ -884,6 +888,42 @@ app.put("/api/letterhead", requireAuth, requireRole("registrar_admin"), async (r
   );
   LETTERHEAD_CACHE = imageBase64;
   res.json({ ok: true });
+});
+
+// The Financial Aid department enters the scholarship / financial-aid % on the application; the fee table's
+// "after scholarship" figures are then calculated from it. 0 is a valid answer ("no scholarship") - the
+// department then edits the certificate to remove the scholarship statement.
+app.put("/api/applications/:id/scholarship", requireAuth, async (req, res) => {
+  if (req.auth.role !== "finaid_admin" && req.auth.role !== "super_admin") {
+    return err(res, 403, "FORBIDDEN", "Only the Financial Aid department enters the scholarship percentage.");
+  }
+  const raw = (req.body || {}).percent;
+  const pct = raw === "" || raw === null || raw === undefined ? NaN : Number(String(raw).replace("%", "").trim());
+  if (!isFinite(pct) || pct < 0 || pct > 100) return err(res, 422, "BAD_PERCENT", "Enter a percentage between 0 and 100 (0 if there is no scholarship).");
+  const rounded = Math.round(pct * 100) / 100;
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query("SELECT a.*, ct.code AS cert_type_code FROM applications a JOIN certificate_types ct USING (cert_type_id) WHERE a.application_id = $1", [req.params.id]);
+    const application = rows[0];
+    if (!application) return err(res, 404, "APPLICATION_NOT_FOUND", "No application exists with the given ID.");
+    if (application.cert_type_code !== "BANK_LOAN_FIN_AID") return err(res, 409, "NOT_APPLICABLE", "This certificate type does not use a scholarship percentage.");
+    if (EDITABLE_STATUSES.indexOf(application.status) === -1) return err(res, 409, "NOT_EDITABLE", "This application is " + application.status + " and can no longer be edited.");
+    const stage = application.stages[application.current_stage_index];
+    if (req.auth.role === "finaid_admin" && stage !== "FINAID") return err(res, 409, "NOT_YOUR_STAGE", "The scholarship percentage can be entered while the application is at the Financial Aid stage.");
+    await client.query("UPDATE applications SET scholarship_percent = $1, certificate_html = NULL, certificate_html_updated_by = NULL, certificate_html_updated_at = NULL WHERE application_id = $2", [rounded, application.application_id]);
+    await client.query(
+      "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'EDITED',$5)",
+      [application.application_id, req.auth.userId, req.auth.name, req.auth.role, "Set the scholarship / financial aid to " + rounded + "% (fee table recalculated)"]
+    );
+    application.scholarship_percent = rounded; application.certificate_html = null;
+    const html = sanitizeCertificateHtml(await renderDraftCertificateHtml(client, application));
+    res.json({ ok: true, percent: rounded, html, saved: false, updatedAt: null, unresolved: findUnresolvedBlanks(html) });
+  } catch (e) {
+    console.error(e);
+    err(res, 500, "SERVER_ERROR", "Could not save the scholarship percentage.");
+  } finally {
+    client.release();
+  }
 });
 
 // Throw away manual edits and regenerate from the templates + current backend data.
@@ -1013,6 +1053,12 @@ app.patch("/api/department/applications/:id/action", requireAuth, async (req, re
     }
 
     const actorLine = req.auth.name + " (" + req.auth.role + ")";
+    if (action === "approve" && currentDept === "FINAID") {
+      const ct = await client.query("SELECT code FROM certificate_types WHERE cert_type_id = $1", [application.cert_type_id]);
+      if (ct.rows[0] && ct.rows[0].code === "BANK_LOAN_FIN_AID" && (application.scholarship_percent === null || application.scholarship_percent === undefined)) {
+        return err(res, 422, "SCHOLARSHIP_REQUIRED", "Enter the scholarship / financial aid percentage in the certificate editor first (enter 0 if there is none).");
+      }
+    }
     if (action === "approve") {
       const nextIndex = application.current_stage_index + 1;
       await client.query(

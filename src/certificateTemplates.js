@@ -52,15 +52,10 @@ function heading(text) {
 // is composited at issue time); on a re-render of an already-issued certificate
 // the stored images are placed directly.
 function signatureBlock(cert) {
-  var sigStyle = "", sealStyle = "";
-  if (cert && cert.signature_position) {
-    var sp = cert.signature_position;
-    sigStyle = ' style="position:absolute;top:' + (sp.top || 78) + '%;left:' + (sp.left || 8) + '%;max-width:150px;max-height:60px;"';
-  }
-  if (cert && cert.seal_position) {
-    var kp = cert.seal_position;
-    sealStyle = ' style="position:absolute;top:' + (kp.top || 70) + '%;left:' + (kp.left || 60) + '%;max-width:110px;max-height:110px;"';
-  }
+  // Signature and seal are laid out in the normal flow, side by side above the Registrar's name, so they can
+  // never sit on top of the text below them.
+  var sigStyle = ' style="max-height:60px;max-width:150px;vertical-align:bottom;"';
+  var sealStyle = ' style="max-height:90px;max-width:110px;vertical-align:bottom;"';
   var sigImg = cert && cert.registrar_signature_data
     ? '<img src="' + esc(cert.registrar_signature_data) + '"' + sigStyle + ' alt="Registrar signature">'
     : '<span class="sig-token" data-token="signature">(E-Signature)</span>';
@@ -68,7 +63,7 @@ function signatureBlock(cert) {
     ? '<img src="' + esc(cert.registrar_seal_data) + '"' + sealStyle + ' alt="Official seal">'
     : '<span class="sig-token" data-token="seal">(E-Stamp)</span>';
   return (
-    '<div class="sig-marks" style="position:relative;min-height:70px;">' + sigImg + "&nbsp;&nbsp;&nbsp;" + sealImg + "</div>" +
+    '<div class="sig-marks" style="margin-top:24px;">' + sigImg + "&nbsp;&nbsp;&nbsp;" + sealImg + "</div>" +
     '<p class="sig-name">Sanjay Bhatnagar</p>' +
     '<p class="sig-title">Registrar</p>'
   );

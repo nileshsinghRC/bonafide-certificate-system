@@ -125,12 +125,9 @@ function unwrapBlanks(html) {
   return html.replace(new RegExp(BLANK_RE.source, "g"), function (_all, _attrs, inner) { return inner; });
 }
 
+// Inline, in the normal text flow (the old absolutely-positioned version landed on top of the Registrar's name).
 function tokenImg(data, pos, defTop, defLeft, maxW, maxH, alt) {
-  const p = pos || {};
-  const top = Number(p.top);
-  const left = Number(p.left);
-  return '<img src="' + escapeAttr(data) + '" style="position:absolute;top:' + (isFinite(top) ? top : defTop) + "%;left:" +
-    (isFinite(left) ? left : defLeft) + "%;max-width:" + maxW + "px;max-height:" + maxH + 'px;" alt="' + alt + '">';
+  return '<img src="' + escapeAttr(data) + '" style="max-height:' + maxH + "px;max-width:" + maxW + 'px;vertical-align:bottom;" alt="' + alt + '">';
 }
 
 // Replace a token span, tolerating the editor having wrapped it in formatting.
@@ -149,8 +146,8 @@ function finalizeHtml(rawHtml, opts) {
   const dateStr = new Date(opts.issuedAt || Date.now()).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   html = html.split("{{CERT_NO}}").join(opts.certNo).split("{{ISSUE_DATE}}").join(dateStr).split("{{QR_TOKEN}}").join(opts.qrToken);
 
-  const sig = opts.signatureData ? tokenImg(opts.signatureData, opts.signaturePosition, 78, 8, 150, 60, "Registrar signature") : "";
-  const seal = opts.sealData ? tokenImg(opts.sealData, opts.sealPosition, 70, 60, 110, 110, "Official seal") : "";
+  const sig = opts.signatureData ? tokenImg(opts.signatureData, null, 0, 0, 150, 60, "Registrar signature") : "";
+  const seal = opts.sealData ? tokenImg(opts.sealData, null, 0, 0, 110, 90, "Official seal") : "";
 
   const rs = replaceTokenSpan(html, "signature", sig);
   html = rs.html;
@@ -160,8 +157,8 @@ function finalizeHtml(rawHtml, opts) {
   // If someone deleted the signature placeholder in the editor, still put the
   // signature on the certificate: a certificate without one must never go out.
   if (!rs.found && sig) {
-    html = html.replace(/(<p class="sig-name">)/, '<div class="sig-marks" style="position:relative;min-height:70px;">' + sig + (rk.found || !seal ? "" : "&nbsp;&nbsp;&nbsp;" + seal) + "</div>$1");
-    if (!/<div class="sig-marks"/.test(html)) html += '<div class="sig-marks" style="position:relative;min-height:70px;">' + sig + seal + "</div>";
+    html = html.replace(/(<p class="sig-name">)/, '<div class="sig-marks" style="margin-top:24px;">' + sig + (rk.found || !seal ? "" : "&nbsp;&nbsp;&nbsp;" + seal) + "</div>$1");
+    if (!/<div class="sig-marks"/.test(html)) html += '<div class="sig-marks" style="margin-top:24px;">' + sig + seal + "</div>";
   }
 
   html = unwrapBlanks(html);
