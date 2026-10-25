@@ -1623,14 +1623,18 @@ app.get("/api/settings", requireAuth, async (req, res) => {
 // Batch = start year + programme length, e.g. 2024-2029 for a 5-year programme.
 app.get("/api/batches", requireAuth, requireRole("super_admin"), async (req, res) => {
   let r;
-  if (req.query.programmeId) r = await pool.query("SELECT name, duration_years FROM programmes WHERE programme_id = $1", [Number(req.query.programmeId)]);
-  else r = await pool.query("SELECT name, duration_years FROM programmes WHERE lower(name) = lower($1)", [String(req.query.programme || "")]);
+  if (req.query.programmeId) r = await pool.query("SELECT programme_id, name, duration_years FROM programmes WHERE programme_id = $1", [Number(req.query.programmeId)]);
+  else r = await pool.query("SELECT programme_id, name, duration_years FROM programmes WHERE lower(name) = lower($1)", [String(req.query.programme || "")]);
   const prog = r.rows[0];
   if (!prog) return err(res, 404, "PROGRAMME_NOT_FOUND", "No such programme.");
   const d = prog.duration_years ? Number(prog.duration_years) : null;
   const batches = [];
   if (d) for (let y = new Date().getFullYear() + 1; y >= new Date().getFullYear() - 9; y--) batches.push(y + "-" + (y + d));
-  res.json({ programme: prog.name, durationYears: d, batches });
+  // Which batches already have a saved fee structure (so the editor can show them instead of looking empty).
+  const saved = await pool.query("SELECT batch, count(*)::int AS n FROM fee_structures WHERE programme_id = $1 GROUP BY batch", [prog.programme_id]);
+  const withFees = saved.rows.filter((x) => x.batch).map((x) => x.batch).sort().reverse();
+  const allBatchesSaved = saved.rows.some((x) => !x.batch);
+  res.json({ programme: prog.name, durationYears: d, batches, withFees, allBatchesSaved });
 });
 
 // ---------------- Fee structure (feeds the fee tables on the Bank Loan certificates) ----------------

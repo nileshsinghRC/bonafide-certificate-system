@@ -464,6 +464,7 @@
         <input type="text" id="fs-batch" placeholder="Batch (optional) e.g. 2023-2027" style="width:210px;margin:0;">
         <button class="btn ghost small" id="fs-load">Load</button>
       </div>
+      <p class="section-sub" id="fs-saved-note" style="margin:-2px 0 8px;"></p>
       <table style="width:100%;font-size:12.5px;"><thead><tr><th>Year</th><th>Tuition / semester</th><th>Tuition / year</th><th>Residence &amp; mess / semester</th><th>Residence &amp; mess / year</th></tr></thead><tbody id="fs-rows"></tbody></table>
       <button class="btn small" id="fs-save" style="margin-top:8px;">Save fee structure</button>
       <span id="fs-confirm" style="display:none;color:var(--sage);font-size:12px;font-weight:600;margin-left:8px;">&#10003; Saved</span>
@@ -1239,9 +1240,22 @@
       if(!v){ sel.innerHTML = '<option value="">Choose the programme first</option>'; return Promise.resolve(); }
       return api("/api/batches?" + (opts.byId ? "programmeId=" + encodeURIComponent(v) : "programme=" + encodeURIComponent(v))).then(function(r){
         if(mine !== req) return;
-        sel.innerHTML = '<option value="">' + (opts.allowAll ? "All batches" : "Choose batch…") + '</option>' +
-          r.batches.map(function(b){ return '<option value="' + b + '">' + b + '</option>'; }).join("") +
+        var saved = opts.markSaved ? (r.withFees || []) : [];
+        var all = r.batches.slice();
+        saved.forEach(function(b){ if(all.indexOf(b) === -1) all.push(b); });
+        all.sort().reverse();
+        sel.innerHTML = '<option value="">' + (opts.allowAll ? "All batches" + (opts.markSaved && r.allBatchesSaved ? "  ✓ fees saved" : "") : "Choose batch…") + '</option>' +
+          all.map(function(b){ return '<option value="' + b + '">' + b + (saved.indexOf(b) !== -1 ? "  ✓ fees saved" : "") + '</option>'; }).join("") +
           '<option value="__other">' + (r.durationYears ? "Other (type it)…" : "Programme length not set — type it…") + '</option>';
+        if(opts.noteId){
+          var note = document.getElementById(opts.noteId);
+          note.textContent = saved.length || r.allBatchesSaved
+            ? "Fees are saved for: " + (r.allBatchesSaved ? "all batches" + (saved.length ? ", " : "") : "") + saved.slice().reverse().join(", ") + ". Pick a batch to view or edit it."
+            : "No fee structure saved for this programme yet.";
+        }
+        if(opts.markSaved && opts.autoSelectSaved && saved.length && !r.allBatchesSaved){
+          sel.value = saved[0]; input.value = saved[0];     // open on the newest batch that has fees
+        }
       }).catch(function(){ sel.innerHTML = '<option value="__other">Type the batch…</option>'; });
     }
     sel.addEventListener("change", function(){
@@ -1734,7 +1748,7 @@
     var mine = ++FS_REQ;   // ignore a slower, older response if the programme was changed again meanwhile
     api("/api/fee-structures?programmeId="+pid+"&batch="+encodeURIComponent(document.getElementById("fs-batch").value.trim())).then(function(r){ if(mine === FS_REQ) fsFill(r.rows); }).catch(function(e){ alert(e.message); });
   }
-  var fsBatchSel = attachBatchPicker("fs-batch", "fs-programme", {byId: true, allowAll: true, onChange: function(){ fsLoad(); }, style: "width:auto;margin:0;"});
+  var fsBatchSel = attachBatchPicker("fs-batch", "fs-programme", {byId: true, allowAll: true, markSaved: true, autoSelectSaved: true, noteId: "fs-saved-note", onChange: function(){ fsLoad(); }, style: "width:auto;margin:0;"});
   document.getElementById("fs-load").addEventListener("click", fsLoad);
   document.getElementById("fs-programme").addEventListener("change", function(){ fsBatchSel.refill().then(fsLoad); });
   document.getElementById("fs-save").addEventListener("click", function(){
@@ -1746,7 +1760,9 @@
       rows.push(r);
     }
     api("/api/fee-structures", {method:"PUT", body: JSON.stringify({programmeId: Number(pid), batch: document.getElementById("fs-batch").value.trim() || null, rows: rows})})
-      .then(function(){ flash("fs-confirm"); }).catch(function(e){ alert(e.message); });
+      .then(function(){ flash("fs-confirm"); var keep = document.getElementById("fs-batch").value; return fsBatchSel.refill().then(function(){
+        if(keep){ var s2 = document.getElementById("fs-batch-sel"); [].slice.call(s2.options).forEach(function(o){ if(o.value === keep) s2.value = keep; }); document.getElementById("fs-batch").value = keep; fsLoad(); }
+      }); }).catch(function(e){ alert(e.message); });
   });
   document.getElementById("cd-programmes").addEventListener("click", function(e){
     var b = e.target.closest("button[data-prog-save]"); if(!b) return;
