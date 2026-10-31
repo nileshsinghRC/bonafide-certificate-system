@@ -128,6 +128,9 @@ CREATE TABLE IF NOT EXISTS applications (
     certificate_html_updated_at      TIMESTAMPTZ,
     page_margins                       JSONB,        -- {top,right,bottom,left} in mm; NULL = default (see server.js DEFAULT_MARGINS_MM)
     scholarship_percent                NUMERIC(5,2), -- entered by the Financial Aid department; drives the after-scholarship fee columns
+    lead_approval_requested            BOOLEAN NOT NULL DEFAULT false, -- Registrar asked the school for its lead's approval (optional)
+    lead_approval_note                 TEXT,
+    lead_approval_requested_at         TIMESTAMPTZ,
     -- Per-request facts the student supplies (VISA: country, eventName, dateFrom, dateTo, sponsorship)
     request_details                   JSONB NOT NULL DEFAULT '{}'::jsonb,
 
@@ -169,6 +172,21 @@ CREATE TABLE IF NOT EXISTS documents (
     uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_documents_app ON documents(application_id);
+
+-- Optional approval of the school lead, attached by the School's Office (see migration 009)
+CREATE TABLE IF NOT EXISTS lead_approvals (
+    approval_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    application_id    UUID NOT NULL REFERENCES applications(application_id) ON DELETE CASCADE,
+    file_name         VARCHAR(255) NOT NULL,
+    mime_type         VARCHAR(100) NOT NULL,
+    size_bytes        INTEGER NOT NULL,
+    file_data         BYTEA NOT NULL,
+    note              TEXT,
+    uploaded_by       UUID REFERENCES users(user_id),
+    uploaded_by_name  VARCHAR(150),
+    uploaded_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lead_approvals_app ON lead_approvals(application_id);
 
 -- ---------------- CERTIFICATES ----------------
 CREATE TABLE IF NOT EXISTS certificates (

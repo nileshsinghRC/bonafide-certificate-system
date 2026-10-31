@@ -1009,7 +1009,8 @@ app.get("/api/department/queue", requireAuth, async (req, res) => {
     schoolClause = " AND " + schoolOwnsSql("a", "$2");
   }
   const { rows } = await pool.query(
-    `SELECT a.*, ct.code AS cert_type_code, ct.label AS cert_type_label
+    `SELECT a.*, ct.code AS cert_type_code, ct.label AS cert_type_label,
+            (SELECT count(*)::int FROM lead_approvals la WHERE la.application_id = a.application_id) AS lead_approval_count
      FROM applications a JOIN certificate_types ct ON ct.cert_type_id = a.cert_type_id
      WHERE a.status IN ('IN_PROGRESS', 'RETURNED_TO_DEPARTMENT')
        AND a.current_stage_index < jsonb_array_length(a.stages)
@@ -1144,7 +1145,8 @@ app.post("/api/department/applications/:id/resubmit-to-registrar", requireAuth, 
 // ============================================================
 app.get("/api/registrar/queue", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT a.*, ct.code AS cert_type_code, ct.label AS cert_type_label
+    `SELECT a.*, ct.code AS cert_type_code, ct.label AS cert_type_label,
+            (SELECT count(*)::int FROM lead_approvals la WHERE la.application_id = a.application_id) AS lead_approval_count
      FROM applications a JOIN certificate_types ct ON ct.cert_type_id = a.cert_type_id
      WHERE a.status = 'IN_PROGRESS' AND a.current_stage_index >= jsonb_array_length(a.stages)
      ORDER BY a.created_at ASC`
@@ -1208,6 +1210,116 @@ app.post("/api/registrar/applications/:id/return", requireAuth, requireRole("reg
   } finally {
     client.release();
   }
+});
+
+// ============================================================
+// OPTIONAL: school lead's approval (e.g. VISA & Passport / travel abroad)
+// ============================================================
+// The School's Office may attach the lead's approval to an application; the Registrar can ask for it.
+// It is never required to issue. Visible only to: the owning school's office, the Registrar and Super Admin.
+const LEAD_OPEN_STATUSES = ["IN_PROGRESS", "RETURNED_TO_DEPARTMENT", "DOCS_REQUESTED"];
+const LEAD_MIME = { "application/pdf": "%PDF", "image/jpeg": "\xff\xd8", "image/png": "\x89PNG" };
+const LEAD_MAX_BYTES = 3 * 1024 * 1024;
+
+async function loadLeadApplication(req, res) {
+  const { rows } = await pool.query("SELECT a.*, ct.label AS cert_type_label FROM applications a JOIN certificate_types ct USING (cert_type_id) WHERE a.application_id = $1", [req.params.id]);
+  const application = rows[0];
+  if (!application) { err(res, 404, "APPLICATION_NOT_FOUND", "No application exists with the given ID."); return null; }
+  const role = req.auth.role;
+  let ok = role === "registrar_admin" || role === "super_admin";
+  if (role === "school_admin") ok = await schoolOwnsApplication(await schoolIdOfUser(req.auth.userId), application);
+  if (!ok) { err(res, 403, "FORBIDDEN", "You do not have access to this application's lead approval."); return null; }
+  return application;
+}
+const leadMeta = (r) => ({ approvalId: r.approval_id, fileName: r.file_name, mimeType: r.mime_type, sizeBytes: r.size_bytes, note: r.note, uploadedBy: r.uploaded_by_name, uploadedAt: r.uploaded_at });
+
+app.get("/api/applications/:id/lead-approval", requireAuth, async (req, res) => {
+  const application = await loadLeadApplication(req, res); if (!application) return;
+  const { rows } = await pool.query("SELECT approval_id, file_name, mime_type, size_bytes, note, uploaded_by_name, uploaded_at FROM lead_approvals WHERE application_id = $1 ORDER BY uploaded_at", [application.application_id]);
+  res.json({
+    applicationCode: application.application_code, studentName: application.student_name, certTypeLabel: application.cert_type_label, status: application.status,
+    requested: application.lead_approval_requested, requestNote: application.lead_approval_note, requestedAt: application.lead_approval_requested_at,
+    canUpload: (req.auth.role === "school_admin" || req.auth.role === "super_admin") && LEAD_OPEN_STATUSES.indexOf(application.status) !== -1,
+    canRequest: (req.auth.role === "registrar_admin" || req.auth.role === "super_admin") && LEAD_OPEN_STATUSES.indexOf(application.status) !== -1,
+    files: rows.map(leadMeta)
+  });
+});
+
+app.post("/api/applications/:id/lead-approval", requireAuth, requireRole("school_admin", "super_admin"), async (req, res) => {
+  const application = await loadLeadApplication(req, res); if (!application) return;
+  if (LEAD_OPEN_STATUSES.indexOf(application.status) === -1) return err(res, 409, "NOT_EDITABLE", "This application is " + application.status + "; approvals can no longer be attached.");
+  const { fileName, mimeType, dataBase64, note } = req.body || {};
+  if (!fileName || !mimeType || !dataBase64) return err(res, 422, "MISSING_FIELDS", "Choose the approval file to attach.");
+  if (!Object.prototype.hasOwnProperty.call(LEAD_MIME, mimeType)) return err(res, 422, "BAD_TYPE", "Attach the approval as a PDF, JPEG or PNG file.");
+  const b64 = String(dataBase64).replace(/^data:[^;]+;base64,/, "");
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(b64)) return err(res, 422, "BAD_FILE", "The file could not be read.");
+  const buf = Buffer.from(b64, "base64");
+  if (!buf.length) return err(res, 422, "BAD_FILE", "The file is empty.");
+  if (buf.length > LEAD_MAX_BYTES) return err(res, 413, "TOO_LARGE", "The file is larger than 3 MB.");
+  if (buf.slice(0, LEAD_MIME[mimeType].length).toString("latin1") !== LEAD_MIME[mimeType]) return err(res, 422, "BAD_FILE", "The file content does not match its type.");
+  const count = await pool.query("SELECT count(*)::int AS n FROM lead_approvals WHERE application_id = $1", [application.application_id]);
+  if (count.rows[0].n >= 5) return err(res, 409, "TOO_MANY", "At most 5 files can be attached to one application. Remove one first.");
+  const safeName = String(fileName).replace(/[\r\n"\\/]/g, "_").slice(0, 200);
+  const ins = await pool.query(
+    "INSERT INTO lead_approvals (application_id, file_name, mime_type, size_bytes, file_data, note, uploaded_by, uploaded_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING approval_id, file_name, mime_type, size_bytes, note, uploaded_by_name, uploaded_at",
+    [application.application_id, safeName, mimeType, buf.length, buf, note ? String(note).slice(0, 500) : null, req.auth.userId, req.auth.name]
+  );
+  await pool.query(
+    "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'LEAD_APPROVAL_ADDED',$5)",
+    [application.application_id, req.auth.userId, req.auth.name, req.auth.role, "Attached the school lead's approval: " + safeName]
+  );
+  res.status(201).json(leadMeta(ins.rows[0]));
+});
+
+app.get("/api/applications/:id/lead-approval/:approvalId/file", requireAuth, async (req, res) => {
+  const application = await loadLeadApplication(req, res); if (!application) return;
+  const { rows } = await pool.query("SELECT file_name, mime_type, file_data FROM lead_approvals WHERE approval_id = $1 AND application_id = $2", [req.params.approvalId, application.application_id]);
+  if (!rows[0]) return err(res, 404, "NOT_FOUND", "No such file.");
+  res.set({ "Content-Type": rows[0].mime_type, "Content-Disposition": 'inline; filename="' + rows[0].file_name.replace(/[^\w.\- ]/g, "_") + '"', "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store" });
+  res.send(rows[0].file_data);
+});
+
+app.delete("/api/applications/:id/lead-approval/:approvalId", requireAuth, requireRole("school_admin", "super_admin"), async (req, res) => {
+  const application = await loadLeadApplication(req, res); if (!application) return;
+  if (LEAD_OPEN_STATUSES.indexOf(application.status) === -1) return err(res, 409, "NOT_EDITABLE", "This application is " + application.status + "; approvals can no longer be changed.");
+  const del = await pool.query("DELETE FROM lead_approvals WHERE approval_id = $1 AND application_id = $2 RETURNING file_name", [req.params.approvalId, application.application_id]);
+  if (!del.rows[0]) return err(res, 404, "NOT_FOUND", "No such file.");
+  await pool.query(
+    "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'LEAD_APPROVAL_REMOVED',$5)",
+    [application.application_id, req.auth.userId, req.auth.name, req.auth.role, "Removed the lead approval file: " + del.rows[0].file_name]
+  );
+  res.json({ ok: true });
+});
+
+// Registrar asks the school for its lead's approval. The application stays where it is (no re-routing).
+app.post("/api/applications/:id/lead-approval/request", requireAuth, requireRole("registrar_admin", "super_admin"), async (req, res) => {
+  const application = await loadLeadApplication(req, res); if (!application) return;
+  if (LEAD_OPEN_STATUSES.indexOf(application.status) === -1) return err(res, 409, "NOT_EDITABLE", "This application is " + application.status + ".");
+  const note = String((req.body || {}).note || "").trim().slice(0, 500);
+  await pool.query("UPDATE applications SET lead_approval_requested = true, lead_approval_note = $1, lead_approval_requested_at = now() WHERE application_id = $2", [note || null, application.application_id]);
+  await pool.query(
+    "INSERT INTO activity_logs (application_id, actor_user_id, actor_name, actor_role, action, note) VALUES ($1,$2,$3,$4,'LEAD_APPROVAL_REQUESTED',$5)",
+    [application.application_id, req.auth.userId, req.auth.name, req.auth.role, "Asked the school for its lead's approval" + (note ? ": " + note : "")]
+  );
+  res.json({ ok: true });
+});
+
+// The school office's list of applications where the Registrar has asked for the lead's approval
+// (shown even when the application has already moved on from the school stage).
+app.get("/api/department/lead-approval-requests", requireAuth, requireRole("school_admin", "super_admin"), async (req, res) => {
+  let where = "a.lead_approval_requested = true AND a.status IN ('IN_PROGRESS','RETURNED_TO_DEPARTMENT','DOCS_REQUESTED')";
+  const params = [];
+  if (req.auth.role === "school_admin") {
+    const sid = await schoolIdOfUser(req.auth.userId);
+    if (!sid) return res.json([]);
+    params.push(sid);
+    where += " AND " + schoolOwnsSql("a", "$1");
+  }
+  const { rows } = await pool.query(
+    `SELECT a.application_id, a.application_code, a.student_name, a.program, a.lead_approval_note, a.lead_approval_requested_at, ct.label AS cert_type_label,
+            (SELECT count(*)::int FROM lead_approvals la WHERE la.application_id = a.application_id) AS lead_approval_count
+     FROM applications a JOIN certificate_types ct ON ct.cert_type_id = a.cert_type_id WHERE ` + where + " ORDER BY a.lead_approval_requested_at", params);
+  res.json(rows);
 });
 
 // Req. 5: upload the Registrar's signature and issue the certificate in one

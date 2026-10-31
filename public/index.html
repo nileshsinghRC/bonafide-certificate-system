@@ -325,6 +325,7 @@
     <p class="section-sub" id="dept-sub">Applications currently at your department's stage of the forwarding sequence.</p>
     <select class="dept-picker" id="dept-picker" style="display:none;"></select>
     <div class="metrics" id="dept-metrics"></div>
+    <div class="panel" id="lead-requests-panel" style="display:none;"><p class="label" style="color:var(--brick);">The Registrar has asked for the school lead's approval</p><div class="ledger" id="lead-requests"></div></div>
     <div class="panel"><div class="ledger" id="dept-ledger"></div></div>
   </section>
 
@@ -643,6 +644,29 @@
       <button class="btn ghost small" id="lh-preview-close">Back to editor</button>
       <button class="btn maroon small" onclick="window.print()">Print / save as PDF</button>
     </div>
+  </div>
+</div>
+
+<div class="overlay" id="lead-overlay" style="z-index:65;">
+  <div class="modal" style="max-width:560px;max-height:92vh;overflow-y:auto;">
+    <h3>School lead's approval <span style="font-weight:400;font-size:13px;color:var(--slate);">(optional)</span></h3>
+    <p class="section-sub" id="lead-summary" style="margin-bottom:6px;"></p>
+    <div id="lead-request-box" class="return-banner" style="display:none;margin-bottom:10px;"></div>
+    <p class="label">Attached files</p>
+    <div id="lead-files" style="margin-bottom:8px;"></div>
+    <div id="lead-upload-box" style="display:none;">
+      <p class="label">Attach the lead's approval (PDF, JPEG or PNG, up to 3 MB)</p>
+      <input type="file" id="lead-file" accept="application/pdf,image/jpeg,image/png">
+      <p class="label" style="margin-top:8px;">Note (optional)</p><input type="text" id="lead-note" placeholder="e.g. approved by the Dean on 28 Oct">
+      <button class="btn small" id="lead-attach" style="margin-top:8px;">Attach</button>
+    </div>
+    <div id="lead-request-form" style="display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:10px;">
+      <p class="label">Ask the school for the lead's approval</p>
+      <input type="text" id="lead-request-note" placeholder="Why it is needed, e.g. student travelling abroad (optional)">
+      <button class="btn small" id="lead-request-btn" style="margin-top:8px;">Request from the school</button>
+      <p class="section-sub" style="margin:6px 0 0;">The application stays with you; the School's Office is alerted on their desk. Issuing is never blocked.</p>
+    </div>
+    <div class="modal-actions"><button class="btn ghost small" id="lead-close">Close</button></div>
   </div>
 </div>
 
@@ -1133,7 +1157,23 @@
     var days = Math.floor(hrs / 24);
     return days + "d " + (hrs % 24) + "h";
   }
+  function refreshLeadRequests(){
+    var panel = document.getElementById("lead-requests-panel");
+    if(STATE.user.role !== "school_admin" && !(STATE.user.role === "super_admin" && STATE.deptCode === "SCHOOL")){ panel.style.display = "none"; return; }
+    api("/api/department/lead-approval-requests").then(function(list){
+      panel.style.display = list.length ? "block" : "none";
+      document.getElementById("lead-requests").innerHTML = list.map(function(a){
+        return '<div class="ledger-row"><div class="accent" style="background:var(--brick)"></div><div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+(a.lead_approval_note ? ' · '+escapeHtml(a.lead_approval_note) : '')+' · '+(a.lead_approval_count ? a.lead_approval_count+' file(s) attached' : 'not yet attached')+'</div></div>'+
+          '<div class="actions"><button class="btn small" data-lead-open="'+a.application_id+'">'+(a.lead_approval_count ? "View / add" : "Attach approval")+'</button></div></div>';
+      }).join("");
+    }).catch(function(){ panel.style.display = "none"; });
+  }
+  document.getElementById("lead-requests").addEventListener("click", function(e){
+    var b = e.target.closest("button[data-lead-open]"); if(b) openLeadModal(b.dataset.leadOpen, function(){ refreshLeadRequests(); refreshDeptQueue(); });
+  });
   function refreshDeptQueue(){
+    refreshLeadRequests();
     var q = STATE.user.role === "super_admin" ? "?dept="+encodeURIComponent(STATE.deptCode) : "";
     api("/api/department/queue"+q).then(function(res){
       STATE.deptQueue = res.applications;
@@ -1146,15 +1186,17 @@
       wrap.innerHTML = res.applications.map(function(a){
         var isReturned = a.status === "RETURNED_TO_DEPARTMENT";
         var returnBanner = isReturned ? '<div class="return-banner"><strong>Returned by the Registrar</strong>'+escapeHtml(a.return_comment||"")+'</div>' : "";
+        var leadBtn = (res.dept === "SCHOOL" && (STATE.user.role === "school_admin" || STATE.user.role === "super_admin"))
+          ? '<button class="btn ghost small" data-act="lead" data-id="'+a.application_id+'">Lead approval</button>' : "";
         var actions = isReturned
-          ? '<button class="btn maroon small" data-act="resubmit" data-id="'+a.application_id+'">Resubmit to Registrar</button>'
-          : '<button class="btn ghost small" data-act="preview" data-id="'+a.application_id+'">Edit certificate</button>'+
+          ? leadBtn + '<button class="btn maroon small" data-act="resubmit" data-id="'+a.application_id+'">Resubmit to Registrar</button>'
+          : leadBtn + '<button class="btn ghost small" data-act="preview" data-id="'+a.application_id+'">Edit certificate</button>'+
             '<button class="btn small" data-act="approve" data-id="'+a.application_id+'">Approve &amp; forward</button>'+
             '<button class="btn ghost small" data-act="request_docs" data-id="'+a.application_id+'">Request documents</button>'+
             '<button class="btn maroon small" data-act="reject" data-id="'+a.application_id+'">Reject</button>';
         return '<div class="ledger-row"><div class="accent" style="background:'+(isReturned?"var(--brick)":"var(--gold)")+'"></div>'+
           '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
-          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+' · pending '+minutesToText(a.pendingDurationMinutes)+'</div>'+
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+' · pending '+minutesToText(a.pendingDurationMinutes)+leadBadge(a)+'</div>'+
           returnBanner +
           '</div><div class="actions">'+actions+'</div></div>';
       }).join("");
@@ -1165,6 +1207,8 @@
     var id = b.dataset.id, action = b.dataset.act;
     if(action==="approve"){
       api("/api/department/applications/"+id+"/action", {method:"PATCH", body: JSON.stringify({action:"approve"})}).then(refreshDeptQueue).catch(function(e2){alert(e2.message);});
+    } else if(action==="lead"){
+      openLeadModal(id, refreshDeptQueue);
     } else if(action==="preview"){
       openCertificateEditor(id);
     } else if(action==="resubmit"){
@@ -1542,6 +1586,65 @@
   });
   document.getElementById("lh-preview-close").addEventListener("click", function(){ document.getElementById("lh-preview-overlay").classList.remove("open"); });
 
+  // ---------------- OPTIONAL: SCHOOL LEAD'S APPROVAL ----------------
+  var LEAD = { appId: null, onClose: null };
+  function leadBytes(n){ return n > 1048576 ? (n/1048576).toFixed(1)+" MB" : Math.max(1, Math.round(n/1024))+" KB"; }
+  function renderLead(d){
+    document.getElementById("lead-summary").textContent = d.applicationCode + " · " + d.studentName + " · " + d.certTypeLabel;
+    var rb = document.getElementById("lead-request-box");
+    rb.style.display = d.requested ? "block" : "none";
+    rb.innerHTML = d.requested ? "<strong>The Registrar has asked for the lead's approval</strong>" + escapeHtml(d.requestNote || "") : "";
+    var files = document.getElementById("lead-files");
+    files.innerHTML = d.files.length ? d.files.map(function(f){
+      return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;">'+
+        '<div style="flex:1;"><strong>'+escapeHtml(f.fileName)+'</strong><br><span style="color:var(--slate);">'+leadBytes(f.sizeBytes)+' · '+escapeHtml(f.uploadedBy||"")+' · '+fmtDate(f.uploadedAt)+(f.note?' · '+escapeHtml(f.note):'')+'</span></div>'+
+        '<button class="btn ghost small" data-lead-view="'+f.approvalId+'">View</button>'+
+        (d.canUpload ? '<button class="btn ghost small" data-lead-del="'+f.approvalId+'">Remove</button>' : '')+'</div>';
+    }).join("") : '<div class="section-sub">None attached.</div>';
+    document.getElementById("lead-upload-box").style.display = d.canUpload ? "block" : "none";
+    document.getElementById("lead-request-form").style.display = d.canRequest ? "block" : "none";
+    document.getElementById("lead-request-btn").textContent = d.requested ? "Update the request" : "Request from the school";
+  }
+  function openLeadModal(appId, onClose){
+    LEAD.appId = appId; LEAD.onClose = onClose || null;
+    document.getElementById("lead-file").value = ""; document.getElementById("lead-note").value = ""; document.getElementById("lead-request-note").value = "";
+    return api("/api/applications/"+appId+"/lead-approval").then(function(d){ renderLead(d); document.getElementById("lead-overlay").classList.add("open"); }).catch(function(e){ alert(e.message); });
+  }
+  function reloadLead(){ return api("/api/applications/"+LEAD.appId+"/lead-approval").then(renderLead); }
+  document.getElementById("lead-close").addEventListener("click", function(){ document.getElementById("lead-overlay").classList.remove("open"); if(LEAD.onClose) LEAD.onClose(); });
+  document.getElementById("lead-attach").addEventListener("click", function(){
+    var f = document.getElementById("lead-file").files[0];
+    if(!f){ alert("Choose the approval file first."); return; }
+    if(f.size > 3*1024*1024){ alert("The file is larger than 3 MB."); return; }
+    var r = new FileReader();
+    r.onload = function(){
+      api("/api/applications/"+LEAD.appId+"/lead-approval", {method:"POST", body: JSON.stringify({fileName: f.name, mimeType: f.type, dataBase64: r.result, note: document.getElementById("lead-note").value.trim()})})
+        .then(function(){ document.getElementById("lead-file").value = ""; document.getElementById("lead-note").value = ""; return reloadLead(); }).catch(function(e){ alert(e.message); });
+    };
+    r.readAsDataURL(f);
+  });
+  document.getElementById("lead-files").addEventListener("click", function(e){
+    var v = e.target.closest("button[data-lead-view]"), d = e.target.closest("button[data-lead-del]");
+    if(v){
+      fetch("/api/applications/"+LEAD.appId+"/lead-approval/"+v.dataset.leadView+"/file", {headers: {Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY)}})
+        .then(function(r){ if(!r.ok) throw {message: "Could not open the file."}; return r.blob(); })
+        .then(function(b){ window.open(URL.createObjectURL(b), "_blank"); }).catch(function(e2){ alert(e2.message); });
+    } else if(d){
+      if(!confirm("Remove this file from the application?")) return;
+      api("/api/applications/"+LEAD.appId+"/lead-approval/"+d.dataset.leadDel, {method:"DELETE"}).then(reloadLead).catch(function(e2){ alert(e2.message); });
+    }
+  });
+  document.getElementById("lead-request-btn").addEventListener("click", function(){
+    api("/api/applications/"+LEAD.appId+"/lead-approval/request", {method:"POST", body: JSON.stringify({note: document.getElementById("lead-request-note").value.trim()})})
+      .then(function(){ alert("Requested. The School's Office will see it on their desk."); return reloadLead(); }).catch(function(e){ alert(e.message); });
+  });
+  function leadBadge(a){
+    var t = "";
+    if(a.lead_approval_requested) t += ' · <span style="color:var(--brick);font-weight:600;">lead approval '+(a.lead_approval_count ? 'attached' : 'requested')+'</span>';
+    else if(a.lead_approval_count) t += ' · lead approval attached';
+    return t;
+  }
+
   // ---------------- REGISTRAR ----------------
   function loadRegistrarScreen(){ refreshRegistrarQueue(); refreshIssuedLog(); refreshLetterheadStatus(); }
   function refreshRegistrarQueue(){
@@ -1550,11 +1653,12 @@
       if(!apps.length){ wrap.innerHTML = '<div class="ledger-empty">Nothing awaiting issuance.</div>'; return; }
       wrap.innerHTML = apps.map(function(a){
         var actions = '<button class="btn small" data-act="issue" data-id="'+a.application_id+'">Review &amp; issue</button>'+
+                       '<button class="btn ghost small" data-act="lead" data-id="'+a.application_id+'">Lead approval</button>'+
                        '<button class="btn ghost small" data-act="return" data-id="'+a.application_id+'">Return with comment</button>'+
                        '<button class="btn ghost small" data-act="rreject" data-id="'+a.application_id+'">Reject</button>';
         return '<div class="ledger-row"><div class="accent" style="background:var(--gold)"></div>'+
           '<div class="main"><div class="code">'+escapeHtml(a.application_code)+' · '+escapeHtml(a.cert_type_label)+'</div>'+
-          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+' · pending '+minutesToText(a.pendingDurationMinutes)+'</div></div>'+
+          '<div class="meta">'+escapeHtml(a.student_name)+' — '+escapeHtml(a.program||"")+' · pending '+minutesToText(a.pendingDurationMinutes)+leadBadge(a)+'</div></div>'+
           '<div class="actions">'+actions+'</div></div>';
       }).join("");
     });
@@ -1578,6 +1682,8 @@
     var id = b.dataset.id;
     if(b.dataset.act==="issue"){
       openIssueModal(id);
+    } else if(b.dataset.act==="lead"){
+      openLeadModal(id, refreshRegistrarQueue);
     } else if(b.dataset.act==="return"){
       openReasonModal("Return to Department", "Explain what needs to be corrected (required)", function(text){
         api("/api/registrar/applications/"+id+"/return", {method:"POST", body: JSON.stringify({comment:text})}).then(refreshRegistrarQueue).catch(function(e2){alert(e2.message);});
